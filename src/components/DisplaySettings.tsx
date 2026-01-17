@@ -23,7 +23,8 @@ import {
   Lock,
   Unlock,
   KeyRound,
-  EyeOff
+  EyeOff,
+  LogOut
 } from 'lucide-react';
 
 import { 
@@ -516,10 +517,14 @@ export default function AdminPanel() {
     if (checked) {
         // Turning ON
         if (isPasswordSet) {
-            // Password exists, just enable
              setSettings(prev => ({ ...prev, security_enabled: true }));
-             // We can auto-save here or let user click save. Let's strictly update state and let user save to be consistent with other fields?
-             // Actually requirement says "pop up a modal... if they exit... turn off the toggle". This implies immediate interaction.
+             // Optimistically notify user or wait for explicit save?
+             // Since we're not saving to DB immediately in this specific function (saveSettings is separate),
+             // showing a toast might be misleading if they don't click saved.
+             // HOWEVER, the previous implementation implied we just set state.
+             // User asked for "button have toast". The switch is a button.
+             // Let's add a small toast that says "Remember to save".
+             toast("Password protection enabled. Click Save to apply.", { icon: '🔒' });
         } else {
             // No password set, show modal
             setShowSetupModal(true);
@@ -528,6 +533,7 @@ export default function AdminPanel() {
     } else {
         // Turning OFF - allow
         setSettings(prev => ({ ...prev, security_enabled: false }));
+        toast("Password protection disabled. Click Save to apply.", { icon: '🔓' });
     }
   };
 
@@ -667,6 +673,9 @@ export default function AdminPanel() {
   };
 
   const cancelUpload = () => {
+    if (selectedFile) {
+        toast('Upload cancelled', { icon: '🚫' });
+    }
     setSelectedFile(null);
     setUploadPreviewUrl(null);
     setTitle('');
@@ -813,6 +822,10 @@ export default function AdminPanel() {
   };
 
   const toggleActive = async (id: string, newCheckedState: boolean) => {
+    // Find item for better toast message
+    const item = announcements.find(a => a.id === id);
+    const title = item ? `"${item.title}"` : 'Display';
+
     // Optimistic UI update could be added here, but for now we wait for server
     const { error } = await supabase
       .from('announcements')
@@ -822,7 +835,7 @@ export default function AdminPanel() {
     if (error) {
       toast.error('Failed to update status');
     } else {
-      toast.success(newCheckedState ? 'Display activated' : 'Display hidden');
+      toast.success(`${title} ${newCheckedState ? 'is now active' : 'is now hidden'}`);
       fetchAnnouncements();
     }
   };
@@ -870,19 +883,47 @@ export default function AdminPanel() {
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('display_board_auth');
+    window.location.reload();
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
+        <Toaster position="top-right" />
         <header className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">Display Settings</h1>
             <p className="text-slate-500">Manage the content displayed on your display system.</p>
           </div>
-          <Button variant="outline" asChild>
-            <a href="/" target="_blank" rel="noreferrer">
-              <MonitorPlay className="mr-2 h-4 w-4" />
-              View Display Board
-            </a>
-          </Button>
+          <div className="flex gap-2">
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Logout
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirm Logout</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to log out? You will need to enter the password again to access the settings.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleLogout} className="bg-red-600 hover:bg-red-700">Logout</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <Button variant="outline" asChild>
+                <a href="/">
+                <MonitorPlay className="mr-2 h-4 w-4" />
+                View Display Board
+                </a>
+            </Button>
+          </div>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-3">

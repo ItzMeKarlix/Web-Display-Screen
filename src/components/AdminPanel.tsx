@@ -156,7 +156,7 @@ export default function AdminPanel() {
 
         {/* Upload Confirmation Modal */}
         {selectedFile && uploadPreviewUrl && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70 p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
             <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
               <h2 className="mb-4 text-xl font-bold">Preview Upload</h2>
               

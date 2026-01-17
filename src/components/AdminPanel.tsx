@@ -195,7 +195,7 @@ export default function AdminPanel() {
 
         {/* View Modal */}
         {viewUrl && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90 p-4" onClick={() => setViewUrl(null)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={() => setViewUrl(null)}>
             <div className="relative max-h-screen max-w-screen-xl" onClick={(e) => e.stopPropagation()}>
               <button 
                 onClick={() => setViewUrl(null)}

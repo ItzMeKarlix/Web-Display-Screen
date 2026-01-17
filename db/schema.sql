@@ -1,4 +1,8 @@
-create table announcements (
+-- Complete Setup Script for Scrollable Announcements
+-- Run this in your Supabase SQL Editor (https://supabase.com/dashboard/project/_/sql)
+
+-- 1. Create the announcements table
+create table if not exists public.announcements (
   id uuid default gen_random_uuid() primary key,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   image_url text not null,
@@ -7,41 +11,54 @@ create table announcements (
   active boolean default true
 );
 
--- 1. Enable RLS on the table (if not already)
-alter table announcements enable row level security;
+-- 2. Enable RLS
+alter table public.announcements enable row level security;
 
--- 2. Allow Public Read Access (so the TV can see images)
+-- 3. Create RLS Policies for the Table
+-- Cleanup old policies to ensure idempotency
+drop policy if exists "Public Annoucements are viewable by everyone" on public.announcements;
+drop policy if exists "Anyone can upload announcements" on public.announcements;
+drop policy if exists "Anyone can update announcements" on public.announcements;
+drop policy if exists "Anyone can delete announcements" on public.announcements;
+
+-- PUBLIC VIEW
 create policy "Public Annoucements are viewable by everyone"
-on announcements for select
+on public.announcements for select
 to public
 using ( true );
 
--- 3. Allow Public Insert/Update/Delete (for the Admin Panel)
--- WARNING: This allows anyone with your URL to edit. 
--- You should add Auth later!
+-- PUBLIC EDIT (Insert/Update/Delete) - logic for Admin Panel w/o Auth
 create policy "Anyone can upload announcements"
-on announcements for insert
+on public.announcements for insert
 to public
 with check ( true );
 
 create policy "Anyone can update announcements"
-on announcements for update
+on public.announcements for update
 to public
 using ( true );
 
 create policy "Anyone can delete announcements"
-on announcements for delete
+on public.announcements for delete
 to public
 using ( true );
 
--- 4. Storage Policies (If you created the bucket strictly)
--- Allow public access to view files in 'announcements' bucket
+-- 4. Create the Storage Bucket
+-- Note: 'insert into storage.buckets' requires special permissions or running inside the dashboard SQL editor
+insert into storage.buckets (id, name, public)
+values ('announcements', 'announcements', true)
+on conflict (id) do update
+set public = true; 
+
+-- 5. Storage Policies
+drop policy if exists "Public Access" on storage.objects;
+drop policy if exists "Public Upload" on storage.objects;
+
 create policy "Public Access"
 on storage.objects for select
 to public
 using ( bucket_id = 'announcements' );
 
--- Allow public access to upload files
 create policy "Public Upload"
 on storage.objects for insert
 to public

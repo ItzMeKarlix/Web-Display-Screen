@@ -16,6 +16,7 @@ export default function Announcements() {
       .from('announcements')
       .select('*')
       .eq('active', true)
+      .order('order_index', { ascending: true })
       .order('created_at', { ascending: false });
 
     if (error) {

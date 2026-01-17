@@ -15,7 +15,9 @@ import {
   UploadCloud,
   Settings,
   Save,
-  ChevronDown
+  ChevronDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 
 import { Button } from './ui/button';
@@ -41,6 +43,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "./ui/alert-dialog";
+import { Skeleton } from './ui/skeleton';
 
 // Helper component for editable title
 function EditableTitle({ id, initialTitle, onSave }: { id: string, initialTitle: string, onSave: (id: string, newTitle: string) => void }) {
@@ -95,9 +98,104 @@ function EditableTitle({ id, initialTitle, onSave }: { id: string, initialTitle:
   );
 }
 
+// Helper component for editable duration
+function EditableDuration({ id, initialDuration, onSave }: { id: string, initialDuration: number, onSave: (id: string, newDuration: number) => void }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [value, setValue] = useState(initialDuration);
+
+  const handleSave = () => {
+    if (value !== initialDuration) {
+      onSave(id, value);
+    }
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-2">
+        <Input 
+          type="number"
+          value={value}
+          onChange={(e) => setValue(Number(e.target.value))}
+          className="h-6 w-16 text-xs"
+          autoFocus
+          min="1"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSave();
+            if (e.key === 'Escape') {
+              setValue(initialDuration);
+              setIsEditing(false);
+            }
+          }}
+        />
+        <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={handleSave}>
+          <Check className="h-3 w-3" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 group/duration">
+      <span>Duration: {initialDuration}s</span>
+      <Button 
+        size="icon" 
+        variant="ghost" 
+        className="h-4 w-4 opacity-0 group-hover/duration:opacity-100 transition-opacity"
+        onClick={() => setIsEditing(true)}
+      >
+        <Pencil className="h-2.5 w-2.5 text-slate-400 hover:text-slate-600" />
+      </Button>
+    </div>
+  );
+}
+
+// Helper component for Media Thumbnail with Loading State
+function MediaThumbnail({ url, onClick }: { url: string; onClick: () => void }) {
+  const [loaded, setLoaded] = useState(false);
+  const isVideo = /\.(mp4|webm|ogg|mov)$/i.test(url);
+
+  return (
+    <div 
+        className="relative h-32 w-full shrink-0 overflow-hidden rounded-md bg-slate-100 sm:h-24 sm:w-40 cursor-pointer group"
+        onClick={onClick}
+    >
+        {!loaded && (
+           <Skeleton className="absolute inset-0 h-full w-full" />
+        )}
+        
+        {isVideo ? (
+            <video 
+                src={url} 
+                className={`h-full w-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+                muted 
+                loop 
+                autoPlay 
+                onLoadedData={() => setLoaded(true)}
+            />
+        ) : (
+            <img 
+                src={url} 
+                alt="Announcement" 
+                className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+                onLoad={() => setLoaded(true)}
+            />
+        )}
+        
+        {loaded && (
+           <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20">
+               <Eye className="h-6 w-6 text-white opacity-0 transition-opacity group-hover:opacity-100 drop-shadow-md" />
+           </div>
+        )}
+    </div>
+  );
+}
+
 export default function AdminPanel() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [hasOrderChanges, setHasOrderChanges] = useState(false);
+  const [savingOrder, setSavingOrder] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({ default_duration: 10, refresh_interval: 5 });
   const [savingSettings, setSavingSettings] = useState(false);
   
@@ -120,6 +218,7 @@ export default function AdminPanel() {
     const { data: announcementsData } = await supabase
       .from('announcements')
       .select('*')
+      .order('order_index', { ascending: true })
       .order('created_at', { ascending: false });
     
     if (announcementsData) setAnnouncements(announcementsData);
@@ -292,6 +391,63 @@ export default function AdminPanel() {
     }
   };
 
+  const updateDuration = async (id: string, newDuration: number) => {
+    const { error } = await supabase
+      .from('announcements')
+      .update({ display_duration: newDuration })
+      .eq('id', id);
+      
+    if (error) {
+      toast.error('Failed to update duration');
+    } else {
+      toast.success('Duration updated');
+      fetchAnnouncements();
+    }
+  };
+
+  const moveAnnouncement = (index: number, direction: 'up' | 'down') => {
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === announcements.length - 1) return;
+
+    const newAnnouncements = [...announcements];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    
+    // Swap in UI immediately
+    [newAnnouncements[index], newAnnouncements[targetIndex]] = [newAnnouncements[targetIndex], newAnnouncements[index]];
+    setAnnouncements(newAnnouncements);
+    setHasOrderChanges(true);
+  };
+
+  const saveOrder = async () => {
+    setSavingOrder(true);
+    try {
+        // Must include all required fields for upsert to work (Postgres requirement for INSERT path)
+        const updates = announcements.map((item, idx) => ({
+            ...item,
+            order_index: idx + 1,
+        }));
+
+        const { error } = await supabase
+            .from('announcements')
+            .upsert(
+                updates,
+                { onConflict: 'id', ignoreDuplicates: false } 
+            )
+            .select();
+
+        if (error) throw error;
+        toast.success("Order saved successfully");
+        setHasOrderChanges(false);
+        // Refresh to get canonical state
+        fetchAnnouncements();
+    } catch (error) {
+        console.error('Error saving order:', error);
+        toast.error('Failed to save order');
+    } finally {
+        setSavingOrder(false);
+    }
+  };
+
   const toggleActive = async (id: string, newCheckedState: boolean) => {
     // Optimistic UI update could be added here, but for now we wait for server
     const { error } = await supabase
@@ -456,11 +612,19 @@ export default function AdminPanel() {
             {/* Right Column: List */}
             <div className="lg:col-span-2">
                 <Card className="flex flex-col h-[750px]">
-                    <CardHeader>
-                        <CardTitle>Manage Content</CardTitle>
-                        <CardDescription>
-                            {announcements.length} active announcement{announcements.length !== 1 && 's'}
-                        </CardDescription>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                        <div className="flex flex-col space-y-1.5">
+                            <CardTitle>Manage Content</CardTitle>
+                            <CardDescription>
+                                {announcements.length} active announcement{announcements.length !== 1 && 's'}
+                            </CardDescription>
+                        </div>
+                        {hasOrderChanges && (
+                            <Button size="sm" onClick={saveOrder} disabled={savingOrder}>
+                                {savingOrder ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                Save Order
+                            </Button>
+                        )}
                     </CardHeader>
                     <CardContent className="flex-1 p-0 overflow-hidden relative">
                         <ScrollArea className="h-full p-6">
@@ -470,20 +634,7 @@ export default function AdminPanel() {
                                     key={item.id} 
                                     className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center bg-white shadow-sm"
                                 >
-                                    {/* Thumbnail */}
-                                    <div 
-                                        className="relative h-32 w-full shrink-0 overflow-hidden rounded-md bg-slate-100 sm:h-24 sm:w-40 cursor-pointer group"
-                                        onClick={() => setViewUrl(item.image_url)}
-                                    >
-                                        {/\.(mp4|webm|ogg|mov)$/i.test(item.image_url) ? (
-                                            <video src={item.image_url} className="h-full w-full object-cover" muted loop autoPlay />
-                                        ) : (
-                                            <img src={item.image_url} alt="Announcement" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                                        )}
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20">
-                                            <Eye className="h-6 w-6 text-white opacity-0 transition-opacity group-hover:opacity-100 drop-shadow-md" />
-                                        </div>
-                                    </div>
+                                    <MediaThumbnail url={item.image_url} onClick={() => setViewUrl(item.image_url)} />
 
                                     {/* Info */}
                                     <div className="flex-1 space-y-2">
@@ -496,13 +647,39 @@ export default function AdminPanel() {
                                             <span className={`inline-flex h-2 w-2 rounded-full ${item.active ? 'bg-green-500' : 'bg-slate-300'}`} />
                                         </div>
                                         <div className="flex flex-col gap-1 text-xs text-slate-500">
-                                            <p>Duration: {item.display_duration}s</p>
+                                            <EditableDuration 
+                                                id={item.id}
+                                                initialDuration={item.display_duration}
+                                                onSave={updateDuration}
+                                            />
                                             <p>Uploaded {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString()}</p>
                                         </div>
                                     </div>
 
                                     {/* Actions */}
                                     <div className="flex items-center justify-between gap-4 sm:justify-end">
+                                        {/* Reorder Buttons */}
+                                        <div className="flex items-center gap-1 rounded-md border bg-slate-50 p-1">
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="h-6 w-6 text-slate-500 hover:bg-white hover:text-slate-900"
+                                                onClick={() => moveAnnouncement(announcements.indexOf(item), 'up')}
+                                                disabled={announcements.indexOf(item) === 0}
+                                            >
+                                                <ArrowUp className="h-3 w-3" />
+                                            </Button>
+                                             <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="h-6 w-6 text-slate-500 hover:bg-white hover:text-slate-900"
+                                                onClick={() => moveAnnouncement(announcements.indexOf(item), 'down')}
+                                                disabled={announcements.indexOf(item) === announcements.length - 1}
+                                            >
+                                                <ArrowDown className="h-3 w-3" />
+                                            </Button>
+                                        </div>
+
                                         <div className="flex items-center gap-2">
                                             <Label htmlFor={`active-${item.id}`} className="text-xs text-slate-600">
                                                 {item.active ? 'Active' : 'Hidden'}

@@ -9,7 +9,8 @@ create table if not exists public.announcements (
   title text default 'Untitled Announcement',
   display_duration integer default 10,
   transition_type text default 'fade',
-  active boolean default true
+  active boolean default true,
+  order_index integer default 0
 );
 
 -- 2. Enable RLS

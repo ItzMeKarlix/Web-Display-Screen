@@ -17,8 +17,29 @@ import {
   Save,
   ChevronDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  GripVertical,
+  ImageOff
 } from 'lucide-react';
+
+import { 
+  DndContext, 
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  type DragEndEvent
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -59,7 +80,7 @@ function EditableTitle({ id, initialTitle, onSave }: { id: string, initialTitle:
 
   if (isEditing) {
     return (
-      <div className="flex items-center gap-2 max-w-[250px]">
+      <div className="flex items-center gap-2 max-w-62.5">
         <Input 
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -82,7 +103,7 @@ function EditableTitle({ id, initialTitle, onSave }: { id: string, initialTitle:
 
   return (
     <div className="flex items-center gap-2 group/title">
-      <span className="font-semibold text-slate-900 truncate max-w-[200px]" title={initialTitle}>
+      <span className="font-semibold text-slate-900 truncate max-w-50" title={initialTitle}>
         {initialTitle || "Untitled"}
       </span>
       <Button 
@@ -153,40 +174,219 @@ function EditableDuration({ id, initialDuration, onSave }: { id: string, initial
 // Helper component for Media Thumbnail with Loading State
 function MediaThumbnail({ url, onClick }: { url: string; onClick: () => void }) {
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const isVideo = /\.(mp4|webm|ogg|mov)$/i.test(url);
+
+  useEffect(() => {
+    if (imgRef.current && imgRef.current.complete) {
+        setLoaded(true);
+    }
+    // For video, we rely on onLoadedData, but we can check readyState
+    if (videoRef.current && videoRef.current.readyState >= 3) {
+        setLoaded(true);
+    }
+  }, [url]);
 
   return (
     <div 
         className="relative h-32 w-full shrink-0 overflow-hidden rounded-md bg-slate-100 sm:h-24 sm:w-40 cursor-pointer group"
         onClick={onClick}
     >
-        {!loaded && (
+        {!loaded && !error && (
            <Skeleton className="absolute inset-0 h-full w-full" />
         )}
         
-        {isVideo ? (
+        {error ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 bg-slate-100 p-2 text-center">
+                <ImageOff className="h-6 w-6 mb-1 opacity-50" />
+                <span className="text-[10px] leading-tight">Failed to load</span>
+            </div>
+        ) : isVideo ? (
             <video 
+                ref={videoRef}
                 src={url} 
                 className={`h-full w-full object-cover transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
                 muted 
                 loop 
                 autoPlay 
+                playsInline
                 onLoadedData={() => setLoaded(true)}
+                onError={() => setError(true)}
             />
         ) : (
             <img 
+                ref={imgRef}
                 src={url} 
-                alt="Announcement" 
+                alt="Display" 
+                loading="lazy"
+                decoding="async"
                 className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${loaded ? 'opacity-100' : 'opacity-0'}`}
                 onLoad={() => setLoaded(true)}
+                onError={() => setError(true)}
             />
         )}
         
-        {loaded && (
+        {loaded && !error && (
            <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20">
                <Eye className="h-6 w-6 text-white opacity-0 transition-opacity group-hover:opacity-100 drop-shadow-md" />
            </div>
         )}
+    </div>
+  );
+}
+
+interface SortableRowProps {
+  item: Announcement;
+  updateTitle: (id: string, newTitle: string) => void;
+  updateDuration: (id: string, newDuration: number) => void;
+  toggleActive: (id: string, checked: boolean) => void;
+  deleteAnnouncement: (id: string, imageUrl: string) => void;
+  setViewUrl: (url: string) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  isFirst: boolean;
+  isLast: boolean;
+}
+
+function SortableAnnouncementRow({ 
+  item, 
+  updateTitle, 
+  updateDuration, 
+  toggleActive, 
+  deleteAnnouncement, 
+  setViewUrl,
+  onMoveUp,
+  onMoveDown,
+  isFirst,
+  isLast
+}: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 'auto',
+    opacity: isDragging ? 0.3 : 1,
+    position: 'relative' as const,
+  };
+
+  return (
+    <div 
+        ref={setNodeRef} 
+        style={style} 
+        className={`flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center shadow-sm touch-none ${isDragging ? 'bg-slate-50 border-blue-200' : 'bg-white'}`}
+    >
+        {/* Controls Column (Desktop) */}
+        <div className="hidden sm:flex flex-col items-center gap-1 mr-2 shrink-0">
+             <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-5 w-6 text-slate-400 hover:bg-white hover:text-slate-900"
+                onClick={onMoveUp}
+                disabled={isFirst}
+                title="Move Up"
+            >
+                <ArrowUp className="h-3 w-3" />
+            </Button>
+
+            {/* Drag Handle */}
+            <div 
+                {...attributes} 
+                {...listeners} 
+                className="cursor-grab active:cursor-grabbing p-1 text-slate-300 hover:text-slate-600 rounded-md hover:bg-slate-100"
+                title="Drag to reorder"
+            >
+                <GripVertical className="h-5 w-5" />
+            </div>
+
+             <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-5 w-6 text-slate-400 hover:bg-white hover:text-slate-900"
+                onClick={onMoveDown}
+                disabled={isLast}
+                title="Move Down"
+            >
+                <ArrowDown className="h-3 w-3" />
+            </Button>
+        </div>
+
+        <MediaThumbnail url={item.image_url} onClick={() => setViewUrl(item.image_url)} />
+
+        {/* Info */}
+        <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-2">
+                <EditableTitle 
+                    id={item.id} 
+                    initialTitle={(item as any).title} 
+                    onSave={updateTitle} 
+                />
+                <span className={`inline-flex h-2 w-2 rounded-full ${item.active ? 'bg-green-500' : 'bg-slate-300'}`} />
+            </div>
+            <div className="flex flex-col gap-1 text-xs text-slate-500">
+                <EditableDuration 
+                    id={item.id}
+                    initialDuration={item.display_duration}
+                    onSave={updateDuration}
+                />
+                <p>Uploaded {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString()}</p>
+            </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between gap-4 sm:justify-end">
+            {/* Drag Handle for Mobile */}
+             <div {...attributes} {...listeners} className="sm:hidden flex cursor-grab active:cursor-grabbing p-2 text-slate-400">
+                <GripVertical className="h-5 w-5" />
+            </div>
+
+            <div className="flex items-center gap-2">
+                <Label htmlFor={`active-${item.id}`} className="text-xs text-slate-600">
+                    {item.active ? 'Active' : 'Hidden'}
+                </Label>
+                <Switch 
+                    id={`active-${item.id}`}
+                    checked={item.active}
+                    onCheckedChange={(checked) => toggleActive(item.id, checked)}
+                />
+            </div>
+            
+            <AlertDialog>
+                <AlertDialogTrigger asChild>
+                    <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50"
+                    >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Delete</span>
+                    </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the display from your display board.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => deleteAnnouncement(item.id, item.image_url)} className="bg-red-600 hover:bg-red-700">
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </div>
     </div>
   );
 }
@@ -213,6 +413,13 @@ export default function AdminPanel() {
 
   // View Modal State
   const [viewUrl, setViewUrl] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
   
   const fetchAnnouncements = async () => {
     const { data: announcementsData } = await supabase
@@ -340,7 +547,10 @@ export default function AdminPanel() {
       // 1. Upload to Storage
       const { error: uploadError } = await supabase.storage
         .from('announcements')
-        .upload(filePath, selectedFile);
+        .upload(filePath, selectedFile, {
+            cacheControl: '3600',
+            upsert: false
+        });
 
       if (uploadError) {
         throw uploadError;
@@ -365,12 +575,12 @@ export default function AdminPanel() {
 
       if (dbError) throw dbError;
       
-      toast.success('Announcement uploaded successfully!');
+      toast.success('Display uploaded successfully!');
       fetchAnnouncements(); // Refresh list
       cancelUpload(); // Close modal
     } catch (error: any) {
       console.error(error);
-      toast.error(error.message || 'Error uploading announcement');
+      toast.error(error.message || 'Error uploading display');
     } finally {
       setUploading(false);
       toast.dismiss(loadingToast);
@@ -402,6 +612,20 @@ export default function AdminPanel() {
     } else {
       toast.success('Duration updated');
       fetchAnnouncements();
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      setAnnouncements((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id);
+        const newIndex = items.findIndex((item) => item.id === over.id);
+        
+        setHasOrderChanges(true);
+        return arrayMove(items, oldIndex, newIndex);
+      });
     }
   };
 
@@ -458,7 +682,7 @@ export default function AdminPanel() {
     if (error) {
       toast.error('Failed to update status');
     } else {
-      toast.success(newCheckedState ? 'Announcement activated' : 'Announcement hidden');
+      toast.success(newCheckedState ? 'Display activated' : 'Display hidden');
       fetchAnnouncements();
     }
   };
@@ -466,29 +690,52 @@ export default function AdminPanel() {
   const deleteAnnouncement = async (id: string, imageUrl: string) => {
     // Note: Confirmation handled by UI now
     
-    const deletingToast = toast.loading('Deleting announcement...');
+    const deletingToast = toast.loading('Deleting display...');
     
-    // Delete record
-    const { error } = await supabase
-      .from('announcements')
-      .delete()
-      .eq('id', id);
+    try {
+        // 1. Delete file from Storage
+        if (imageUrl) {
+            // Extract filename from the public URL
+            // URL format: .../storage/v1/object/public/announcements/[filename]
+            const fileName = imageUrl.split('/').pop();
+            
+            if (fileName) {
+                const { error: storageError } = await supabase.storage
+                    .from('announcements')
+                    .remove([fileName]);
+                    
+                if (storageError) {
+                    console.error('Error removing file from storage:', storageError);
+                    // We continue to delete the record even if file deletion fails
+                    // to keep the UI consistent, though strictly we failed the "cleanup"
+                }
+            }
+        }
 
-    if (error) {
-      toast.error('Failed to delete announcement');
-    } else {
-      toast.success('Announcement deleted');
-      fetchAnnouncements();
+        // 2. Delete record from Database
+        const { error } = await supabase
+        .from('announcements')
+        .delete()
+        .eq('id', id);
+
+        if (error) throw error;
+
+        toast.success('Display deleted');
+        fetchAnnouncements();
+    } catch (error) {
+        console.error('Delete error:', error);
+        toast.error('Failed to delete display');
+    } finally {
+        toast.dismiss(deletingToast);
     }
-    toast.dismiss(deletingToast);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
-        <header className="mb-8 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-50 p-6">
+        <header className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Announcement Admin</h1>
-            <p className="text-slate-500">Manage the content displayed on your announcements system.</p>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Display Settings</h1>
+            <p className="text-slate-500">Manage the content displayed on your display system.</p>
           </div>
           <Button variant="outline" asChild>
             <a href="/" target="_blank" rel="noreferrer">
@@ -498,13 +745,13 @@ export default function AdminPanel() {
           </Button>
         </header>
 
-        <div className="grid gap-8 lg:grid-cols-3">
-            {/* Left Column: Upload */}
-            <div className="lg:col-span-1">
-                <Card>
+        <div className="grid gap-6 lg:grid-cols-3">
+            {/* Left Column: Upload & Settings */}
+            <div className="lg:col-span-1 flex flex-col gap-6">
+                <Card className="shrink-0">
                     <CardHeader>
                         <CardTitle>Add New</CardTitle>
-                        <CardDescription>Upload a new image or video announcement.</CardDescription>
+                        <CardDescription>Upload a new image or video display.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="grid w-full items-center gap-1.5">
@@ -551,7 +798,7 @@ export default function AdminPanel() {
                 </Card>
 
                 {/* Settings Card */}
-                <Card className="mt-8">
+                <Card className="flex flex-col">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <Settings className="h-5 w-5" />
@@ -568,6 +815,9 @@ export default function AdminPanel() {
                                 min="1"
                                 value={settings.refresh_interval}
                                 onChange={(e) => setSettings({...settings, refresh_interval: Number(e.target.value)})}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveSettings();
+                                }}
                             />
                             <p className="text-[0.8rem] text-slate-500">
                                 How often the display board checks for new content.
@@ -582,6 +832,9 @@ export default function AdminPanel() {
                                 min="5"
                                 value={settings.default_duration}
                                 onChange={(e) => setSettings({...settings, default_duration: Number(e.target.value)})}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveSettings();
+                                }}
                             />
                             <p className="text-[0.8rem] text-slate-500">
                                 Default time for new uploads (can be overridden).
@@ -611,12 +864,12 @@ export default function AdminPanel() {
 
             {/* Right Column: List */}
             <div className="lg:col-span-2">
-                <Card className="flex flex-col h-[750px]">
+                <Card className="flex flex-col h-175">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
                         <div className="flex flex-col space-y-1.5">
                             <CardTitle>Manage Content</CardTitle>
                             <CardDescription>
-                                {announcements.length} active announcement{announcements.length !== 1 && 's'}
+                                {announcements.length} active display{announcements.length !== 1 && 's'}
                             </CardDescription>
                         </div>
                         {hasOrderChanges && (
@@ -628,108 +881,43 @@ export default function AdminPanel() {
                     </CardHeader>
                     <CardContent className="flex-1 p-0 overflow-hidden relative">
                         <ScrollArea className="h-full p-6">
-                            <div className="space-y-4">
-                                {announcements.map((item) => (
-                                <div 
-                                    key={item.id} 
-                                    className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center bg-white shadow-sm"
+                            <DndContext 
+                                sensors={sensors}
+                                collisionDetection={closestCenter}
+                                onDragEnd={handleDragEnd}
+                            >
+                                <SortableContext 
+                                    items={announcements.map(a => a.id)}
+                                    strategy={verticalListSortingStrategy}
                                 >
-                                    <MediaThumbnail url={item.image_url} onClick={() => setViewUrl(item.image_url)} />
-
-                                    {/* Info */}
-                                    <div className="flex-1 space-y-2">
-                                        <div className="flex items-center gap-2">
-                                            <EditableTitle 
-                                                id={item.id} 
-                                                initialTitle={(item as any).title} 
-                                                onSave={updateTitle} 
+                                    <div className="space-y-4">
+                                        {announcements.map((item, index) => (
+                                            <SortableAnnouncementRow 
+                                                key={item.id}
+                                                item={item}
+                                                updateTitle={updateTitle}
+                                                updateDuration={updateDuration}
+                                                toggleActive={toggleActive}
+                                                deleteAnnouncement={deleteAnnouncement}
+                                                setViewUrl={setViewUrl}
+                                                onMoveUp={() => moveAnnouncement(index, 'up')}
+                                                onMoveDown={() => moveAnnouncement(index, 'down')}
+                                                isFirst={index === 0}
+                                                isLast={index === announcements.length - 1}
                                             />
-                                            <span className={`inline-flex h-2 w-2 rounded-full ${item.active ? 'bg-green-500' : 'bg-slate-300'}`} />
-                                        </div>
-                                        <div className="flex flex-col gap-1 text-xs text-slate-500">
-                                            <EditableDuration 
-                                                id={item.id}
-                                                initialDuration={item.display_duration}
-                                                onSave={updateDuration}
-                                            />
-                                            <p>Uploaded {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString()}</p>
-                                        </div>
-                                    </div>
+                                        ))}
 
-                                    {/* Actions */}
-                                    <div className="flex items-center justify-between gap-4 sm:justify-end">
-                                        {/* Reorder Buttons */}
-                                        <div className="flex items-center gap-1 rounded-md border bg-slate-50 p-1">
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="h-6 w-6 text-slate-500 hover:bg-white hover:text-slate-900"
-                                                onClick={() => moveAnnouncement(announcements.indexOf(item), 'up')}
-                                                disabled={announcements.indexOf(item) === 0}
-                                            >
-                                                <ArrowUp className="h-3 w-3" />
-                                            </Button>
-                                             <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="h-6 w-6 text-slate-500 hover:bg-white hover:text-slate-900"
-                                                onClick={() => moveAnnouncement(announcements.indexOf(item), 'down')}
-                                                disabled={announcements.indexOf(item) === announcements.length - 1}
-                                            >
-                                                <ArrowDown className="h-3 w-3" />
-                                            </Button>
-                                        </div>
-
-                                        <div className="flex items-center gap-2">
-                                            <Label htmlFor={`active-${item.id}`} className="text-xs text-slate-600">
-                                                {item.active ? 'Active' : 'Hidden'}
-                                            </Label>
-                                            <Switch 
-                                                id={`active-${item.id}`}
-                                                checked={item.active}
-                                                onCheckedChange={(checked) => toggleActive(item.id, checked)}
-                                            />
-                                        </div>
+                                        {announcements.length === 0 && (
+                                            <div className="flex h-32 flex-col items-center justify-center rounded-lg border border-dashed text-slate-400">
+                                                <p className="text-sm">No displays found</p>
+                                            </div>
+                                        )}
                                         
-                                        <AlertDialog>
-                                            <AlertDialogTrigger asChild>
-                                                <Button 
-                                                    variant="ghost" 
-                                                    size="icon" 
-                                                    className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                    <span className="sr-only">Delete</span>
-                                                </Button>
-                                            </AlertDialogTrigger>
-                                            <AlertDialogContent>
-                                                <AlertDialogHeader>
-                                                    <AlertDialogTitle>Are you sure absolutely sure?</AlertDialogTitle>
-                                                    <AlertDialogDescription>
-                                                        This action cannot be undone. This will permanently delete the announcement from your display board.
-                                                    </AlertDialogDescription>
-                                                </AlertDialogHeader>
-                                                <AlertDialogFooter>
-                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={() => deleteAnnouncement(item.id, item.image_url)} className="bg-red-600 hover:bg-red-700">
-                                                        Delete
-                                                    </AlertDialogAction>
-                                                </AlertDialogFooter>
-                                            </AlertDialogContent>
-                                        </AlertDialog>
+                                        {/* Scroll Sentinel */}
+                                        <div ref={scrollSentinelRef} className="h-px w-full" />
                                     </div>
-                                </div>
-                            ))}
-
-                            {announcements.length === 0 && (
-                                <div className="flex h-32 flex-col items-center justify-center rounded-lg border border-dashed text-slate-400">
-                                    <p className="text-sm">No announcements found</p>
-                                </div>
-                            )}
-                            
-                            {/* Scroll Sentinel */}
-                            <div ref={scrollSentinelRef} className="h-px w-full" />
-                        </div>
+                                </SortableContext>
+                            </DndContext>
                         </ScrollArea>
                         
                         {/* Scroll Indicator Overlay */}
@@ -770,9 +958,12 @@ export default function AdminPanel() {
                         <Input
                             id="title"
                             type="text"
-                            placeholder="Enter announcement name"
+                            placeholder="Enter display name"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') confirmUpload();
+                            }}
                         />
                      </div>
                      <div className="space-y-1.5">
@@ -783,6 +974,9 @@ export default function AdminPanel() {
                             value={duration}
                             onChange={(e) => setDuration(Number(e.target.value))}
                             min="1"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') confirmUpload();
+                            }}
                         />
                      </div>
                   </div>

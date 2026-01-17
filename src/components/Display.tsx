@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Announcement } from '../types';
 import { ChevronLeft, ChevronRight, Settings, Loader2 } from 'lucide-react';
 
-export default function Announcements() {
+export default function Display() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -76,7 +76,7 @@ export default function Announcements() {
   if (announcements.length === 0) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-black text-white">
-        <h1 className="text-4xl text-gray-500">No Announcements</h1>
+        <h1 className="text-4xl text-gray-500">No Displays</h1>
       </div>
     );
   }
@@ -140,7 +140,7 @@ export default function Announcements() {
       {/* Admin Button */}
       <div className="absolute top-4 right-4 z-50 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
         <a 
-            href="/admin"
+            href="/settings"
             className="flex h-10 w-10 items-center justify-center rounded-full bg-black/30 text-white/70 backdrop-blur-sm transition-all hover:bg-black/50 hover:text-white hover:scale-110"
             title="Go to Admin Panel"
         >

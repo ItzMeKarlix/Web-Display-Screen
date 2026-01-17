@@ -9,7 +9,9 @@ import {
   X, 
   Eye, 
   Loader2,
-  ImagePlus
+  ImagePlus,
+  Pencil,
+  Check
 } from 'lucide-react';
 
 import { Button } from './ui/button';
@@ -24,11 +26,76 @@ import {
   CardDescription 
 } from './ui/card';
 import { ScrollArea } from './ui/scroll-area';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./ui/alert-dialog";
+
+// Helper component for editable title
+function EditableTitle({ id, initialTitle, onSave }: { id: string, initialTitle: string, onSave: (id: string, newTitle: string) => void }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [value, setValue] = useState(initialTitle);
+
+  const handleSave = () => {
+    if (value !== initialTitle) {
+      onSave(id, value);
+    }
+    setIsEditing(false);
+  };
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-2 max-w-[250px]">
+        <Input 
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="h-8 text-sm"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSave();
+            if (e.key === 'Escape') {
+              setValue(initialTitle);
+              setIsEditing(false);
+            }
+          }}
+        />
+        <Button size="icon" variant="ghost" className="h-8 w-8 text-green-600" onClick={handleSave}>
+          <Check className="h-4 w-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 group/title">
+      <span className="font-semibold text-slate-900 truncate max-w-[200px]" title={initialTitle}>
+        {initialTitle || "Untitled"}
+      </span>
+      <Button 
+        size="icon" 
+        variant="ghost" 
+        className="h-6 w-6 opacity-0 group-hover/title:opacity-100 transition-opacity"
+        onClick={() => setIsEditing(true)}
+      >
+        <Pencil className="h-3 w-3 text-slate-400 hover:text-slate-600" />
+      </Button>
+      
+    </div>
+  );
+}
 
 export default function AdminPanel() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [uploading, setUploading] = useState(false);
   const [duration, setDuration] = useState(10);
+  const [title, setTitle] = useState('');
   
   // Upload Modal State
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -69,6 +136,7 @@ export default function AdminPanel() {
   const cancelUpload = () => {
     setSelectedFile(null);
     setUploadPreviewUrl(null);
+    setTitle('');
   };
 
   const confirmUpload = async () => {
@@ -80,7 +148,7 @@ export default function AdminPanel() {
       setUploading(true);
       
       const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${Math.random()}.${fileExt}`;
+      const fileName = `${crypto.randomUUID()}.${fileExt}`;
       const filePath = `${fileName}`;
 
       // 1. Upload to Storage
@@ -102,7 +170,8 @@ export default function AdminPanel() {
         .from('announcements')
         .insert([
           { 
-            image_url: publicUrl, 
+            image_url: publicUrl,
+            title: title || selectedFile.name,
             display_duration: duration,
             active: true 
           },
@@ -122,6 +191,20 @@ export default function AdminPanel() {
     }
   };
 
+  const updateTitle = async (id: string, newTitle: string) => {
+    const { error } = await supabase
+      .from('announcements')
+      .update({ title: newTitle })
+      .eq('id', id);
+      
+    if (error) {
+      toast.error('Failed to update title');
+    } else {
+      toast.success('Title updated');
+      fetchAnnouncements();
+    }
+  };
+
   const toggleActive = async (id: string, newCheckedState: boolean) => {
     // Optimistic UI update could be added here, but for now we wait for server
     const { error } = await supabase
@@ -138,10 +221,10 @@ export default function AdminPanel() {
   };
 
   const deleteAnnouncement = async (id: string, imageUrl: string) => {
-    if (!confirm('Are you sure you want to delete this announcement?')) return;
-
+    // Note: Confirmation handled by UI now
+    
     const deletingToast = toast.loading('Deleting announcement...');
-
+    
     // Delete record
     const { error } = await supabase
       .from('announcements')
@@ -166,7 +249,7 @@ export default function AdminPanel() {
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">Announcement Admin</h1>
-            <p className="text-slate-500">Manage the content displayed on your TV announcements system.</p>
+            <p className="text-slate-500">Manage the content displayed on your announcements system.</p>
           </div>
           <Button variant="outline" asChild>
             <a href="/" target="_blank" rel="noreferrer">
@@ -200,6 +283,17 @@ export default function AdminPanel() {
                                    <ImagePlus className="h-4 w-4 text-slate-400" />
                                 </div>
                             </div>
+                        </div>
+
+                        <div className="grid w-full items-center gap-1.5">
+                            <Label htmlFor="title">Title (Optional)</Label>
+                            <Input
+                                id="title"
+                                type="text"
+                                placeholder="Enter announcement name"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                            />
                         </div>
 
                         <div className="grid w-full items-center gap-1.5">
@@ -249,16 +343,19 @@ export default function AdminPanel() {
                                     </div>
 
                                     {/* Info */}
-                                    <div className="flex-1 space-y-1">
+                                    <div className="flex-1 space-y-2">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-sm font-semibold text-slate-900">
-                                                {item.display_duration}s duration
-                                            </span>
+                                            <EditableTitle 
+                                                id={item.id} 
+                                                initialTitle={item.title} 
+                                                onSave={updateTitle} 
+                                            />
                                             <span className={`inline-flex h-2 w-2 rounded-full ${item.active ? 'bg-green-500' : 'bg-slate-300'}`} />
                                         </div>
-                                        <p className="text-xs text-slate-500">
-                                            Uploaded {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString()}
-                                        </p>
+                                        <div className="flex flex-col gap-1 text-xs text-slate-500">
+                                            <p>Duration: {item.display_duration}s</p>
+                                            <p>Uploaded {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString()}</p>
+                                        </div>
                                     </div>
 
                                     {/* Actions */}
@@ -273,15 +370,33 @@ export default function AdminPanel() {
                                                 onCheckedChange={(checked) => toggleActive(item.id, checked)}
                                             />
                                         </div>
-                                        <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                            onClick={() => deleteAnnouncement(item.id, item.image_url)}
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                            <span className="sr-only">Delete</span>
-                                        </Button>
+                                        
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button 
+                                                    variant="ghost" 
+                                                    size="icon" 
+                                                    className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                    <span className="sr-only">Delete</span>
+                                                </Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle>Are you sure absolutely sure?</AlertDialogTitle>
+                                                    <AlertDialogDescription>
+                                                        This action cannot be undone. This will permanently delete the announcement from your display board.
+                                                    </AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={() => deleteAnnouncement(item.id, item.image_url)} className="bg-red-600 hover:bg-red-700">
+                                                        Delete
+                                                    </AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
                                     </div>
                                 </div>
                             ))}

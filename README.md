@@ -1,43 +1,96 @@
-# Astro Starter Kit: Minimal
+# Scrollable Display Board System
 
-```sh
-npm create astro@latest -- --template minimal
+A dynamic, web-based digital signage application built with Astro, React, and Supabase. Features a public scrolling display board and a secure, password-protected admin settings panel.
+
+## ✨ Features
+
+- **📺 Public Display Board**: Auto-scrolling carousel of images and videos.
+- **🔒 Secure Admin Panel**: 
+  - Dedicated `/settings` route.
+  - Password-protected access (customizable admin password).
+  - First-time setup flow for defining security credentials.
+- **⚙️ Content Management**:
+  - Upload images and videos.
+  - Drag-and-drop reordering.
+  - Toggle visibility (Active/Inactive) per item.
+  - Custom display durations for each item.
+- **🛠️ System Settings**:
+  - Configurable page refresh intervals.
+  - Default duration settings.
+- **🎨 Modern UI**: Built with Shadcn UI, Tailwind CSS, and polished with Toast notifications.
+
+## 🚀 Tech Stack
+
+- **Framework**: [Astro](https://astro.build)
+- **Frontend**: React, Tailwind CSS
+- **UI Components**: Shadcn UI, Lucide React
+- **Backend/Database**: [Supabase](https://supabase.com) (PostgreSQL, Storage, Auth via RPC)
+
+## 🛠️ Installation & Setup Guide
+
+### 1. Prerequisites
+- Node.js installed on your machine.
+- A [Supabase](https://supabase.com) account.
+
+### 2. Clone and Install
+```bash
+git clone <repository-url>
+cd scrollable-announcements
+npm install
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+### 3. Supabase Configuration
 
-## 🚀 Project Structure
+1.  **Create a new Supabase Project**.
+2.  **Database Setup**:
+    *   Navigate to the **SQL Editor** in your Supabase dashboard.
+    *   Open the file `db/schema.sql` from this repository.
+    *   Copy the entire content and paste it into the SQL Editor.
+    *   Click **Run** to set up the tables (`announcements`, `settings`), security policies (RLS), and helper functions.
 
-Inside of your Astro project, you'll see the following folders and files:
+3.  **Get Credentials**:
+    *   Go to **Project Settings** -> **API**.
+    *   Copy the **Project URL** and **anon public key**.
 
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+### 4. Environment Variables
+
+Create a `.env.local` file in the root of your project:
+
+```bash
+PUBLIC_SUPABASE_URL=your_project_url_here
+PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+### 5. Running the Application
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+Start the development server:
 
-Any static assets, like images, can be placed in the `public/` directory.
+```bash
+npm run dev
+```
 
-## 🧞 Commands
+Visit `http://localhost:4321` to see the Display Board.
+Visit `http://localhost:4321/settings` to access the Admin Panel.
 
-All commands are run from the root of the project, from a terminal:
+## 📖 Usage Guide
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+### First-Time Setup
+1.  Navigate to `/settings`.
+2.  Since no password is set initially, you will see a "**Setup Security**" screen.
+3.  Create your Admin Password.
+4.  You will be automatically logged in.
 
-## 👀 Want to learn more?
+### Managing Content
+-   **Upload**: Click the "Upload Media" box to add images or videos.
+-   **Ordering**: Drag and drop items to change their display order.
+-   **Visibility**: Use the toggle switch to show/hide items from the main board without deleting them.
+-   **Duration**: Click the pencil icon next to the duration (e.g., "10s") to change how long that specific item stays on screen.
+-   **Titles**: Click the pencil icon next to the title to rename items.
 
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+### Changing Password
+1.  Go to the **Security** tab in the Settings panel.
+2.  Enter your current password and your new desired password.
+3.  Click "Update Password".
+
+### Logout
+Click the **Logout** button (red icon) in the top header to end your session. You will be asked to confirm before logging out.

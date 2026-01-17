@@ -1,6 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Announcement } from '../types';
+import { 
+  Trash2, 
+  Upload, 
+  MonitorPlay, 
+  X, 
+  Eye, 
+  Loader2,
+  ImagePlus
+} from 'lucide-react';
+
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Switch } from './ui/switch';
+import { 
+  Card, 
+  CardContent, 
+  CardHeader, 
+  CardTitle, 
+  CardDescription 
+} from './ui/card';
 
 export default function AdminPanel() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -85,8 +106,7 @@ export default function AdminPanel() {
 
       if (dbError) throw dbError;
       
-      alert('Upload successful!');
-      fetchAnnouncements();
+      fetchAnnouncements(); // Refresh list
       cancelUpload(); // Close modal
     } catch (error: any) {
       alert('Error uploading document: ' + error.message);
@@ -95,20 +115,18 @@ export default function AdminPanel() {
     }
   };
 
-  const toggleActive = async (id: string, currentStatus: boolean) => {
+  const toggleActive = async (id: string, newCheckedState: boolean) => {
+    // Optimistic UI update could be added here, but for now we wait for server
     const { error } = await supabase
       .from('announcements')
-      .update({ active: !currentStatus })
+      .update({ active: newCheckedState })
       .eq('id', id);
     
     if (!error) fetchAnnouncements();
   };
 
   const deleteAnnouncement = async (id: string, imageUrl: string) => {
-    if (!confirm('Are you sure you want to delete this?')) return;
-
-    // Try to extract filename from URL for cleanup (optional validation)
-    // const fileName = imageUrl.split('/').pop();
+    if (!confirm('Are you sure you want to delete this announcement?')) return;
 
     // Delete record
     const { error } = await supabase
@@ -120,142 +138,209 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-8">
-      <div className="mx-auto max-w-4xl">
-        <header className="mb-8 flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-800">Announcement Admin</h1>
-          <a href="/" className="text-blue-500 hover:underline">View Display Board &rarr;</a>
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8">
+      <div className="mx-auto max-w-5xl space-y-8">
+        
+        {/* Header */}
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Announcement Admin</h1>
+            <p className="text-slate-500">Manage the content displayed on your TV announcements system.</p>
+          </div>
+          <Button variant="outline" asChild>
+            <a href="/" target="_blank" rel="noreferrer">
+              <MonitorPlay className="mr-2 h-4 w-4" />
+              View Display Board
+            </a>
+          </Button>
         </header>
 
-        {/* Upload Section */}
-        <div className="mb-8 rounded-lg bg-white p-6 shadow">
-          <h2 className="mb-4 text-xl font-semibold">Add New Announcement</h2>
-          <div className="flex items-end gap-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Display Duration (seconds)</label>
-              <input
-                type="number"
-                value={duration}
-                onChange={(e) => setDuration(Number(e.target.value))}
-                className="w-32 rounded border border-gray-300 p-2"
-                min="1"
-              />
+        <div className="grid gap-8 lg:grid-cols-3">
+            {/* Left Column: Upload */}
+            <div className="lg:col-span-1">
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Add New</CardTitle>
+                        <CardDescription>Upload a new image or video announcement.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="grid w-full items-center gap-1.5">
+                            <Label htmlFor="image">Media File</Label>
+                            <div className="relative">
+                                <Input
+                                    id="image"
+                                    type="file"
+                                    accept="image/*,video/*"
+                                    onChange={onFileSelect}
+                                    disabled={uploading}
+                                    className="cursor-pointer file:cursor-pointer"
+                                />
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                                   <ImagePlus className="h-4 w-4 text-slate-400" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid w-full items-center gap-1.5">
+                            <Label htmlFor="duration">Display Duration (seconds)</Label>
+                            <Input
+                                id="duration"
+                                type="number"
+                                value={duration}
+                                onChange={(e) => setDuration(Number(e.target.value))}
+                                min="1"
+                            />
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
-            <div className="flex-1">
-              <label className="mb-1 block text-sm font-medium text-gray-700">Media File (Image or Video)</label>
-              <input
-                type="file"
-                accept="image/*,video/*"
-                onChange={onFileSelect}
-                disabled={uploading}
-                className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-full file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100"
-              />
+
+            {/* Right Column: List */}
+            <div className="lg:col-span-2">
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Manage Content</CardTitle>
+                        <CardDescription>
+                            {announcements.length} active announcement{announcements.length !== 1 && 's'}
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="space-y-4">
+                            {announcements.map((item) => (
+                                <div 
+                                    key={item.id} 
+                                    className="flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center bg-white shadow-sm"
+                                >
+                                    {/* Thumbnail */}
+                                    <div 
+                                        className="relative h-32 w-full shrink-0 overflow-hidden rounded-md bg-slate-100 sm:h-24 sm:w-40 cursor-pointer group"
+                                        onClick={() => setViewUrl(item.image_url)}
+                                    >
+                                        {/\.(mp4|webm|ogg|mov)$/i.test(item.image_url) ? (
+                                            <video src={item.image_url} className="h-full w-full object-cover" muted loop autoPlay />
+                                        ) : (
+                                            <img src={item.image_url} alt="Announcement" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                                        )}
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20">
+                                            <Eye className="h-6 w-6 text-white opacity-0 transition-opacity group-hover:opacity-100 drop-shadow-md" />
+                                        </div>
+                                    </div>
+
+                                    {/* Info */}
+                                    <div className="flex-1 space-y-1">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-semibold text-slate-900">
+                                                {item.display_duration}s duration
+                                            </span>
+                                            <span className={`inline-flex h-2 w-2 rounded-full ${item.active ? 'bg-green-500' : 'bg-slate-300'}`} />
+                                        </div>
+                                        <p className="text-xs text-slate-500">
+                                            Uploaded {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString()}
+                                        </p>
+                                    </div>
+
+                                    {/* Actions */}
+                                    <div className="flex items-center justify-between gap-4 sm:justify-end">
+                                        <div className="flex items-center gap-2">
+                                            <Label htmlFor={`active-${item.id}`} className="text-xs text-slate-600">
+                                                {item.active ? 'Active' : 'Hidden'}
+                                            </Label>
+                                            <Switch 
+                                                id={`active-${item.id}`}
+                                                checked={item.active}
+                                                onCheckedChange={(checked) => toggleActive(item.id, checked)}
+                                            />
+                                        </div>
+                                        <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-8 w-8 text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                            onClick={() => deleteAnnouncement(item.id, item.image_url)}
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                            <span className="sr-only">Delete</span>
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+
+                            {announcements.length === 0 && (
+                                <div className="flex h-32 flex-col items-center justify-center rounded-lg border border-dashed text-slate-400">
+                                    <p className="text-sm">No announcements found</p>
+                                </div>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
-          </div>
         </div>
 
         {/* Upload Confirmation Modal */}
         {selectedFile && uploadPreviewUrl && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-            <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
-              <h2 className="mb-4 text-xl font-bold">Preview Upload</h2>
-              
-              <div className="mb-6 flex max-h-[60vh] items-center justify-center bg-gray-100 p-2">
-                 {selectedFile.type.startsWith('video/') ? (
-                    <video src={uploadPreviewUrl} controls className="max-h-full max-w-full" />
-                 ) : (
-                    <img src={uploadPreviewUrl} alt="Preview" className="max-h-full max-w-full object-contain" />
-                 )}
-              </div>
-              
-              <div className="mb-4">
-                 <p className="text-sm text-gray-600">File: <span className="font-semibold">{selectedFile.name}</span></p>
-                 <p className="text-sm text-gray-600">Duration: <span className="font-semibold">{duration} seconds</span></p>
-              </div>
-
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={cancelUpload}
-                  className="rounded bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300"
-                  disabled={uploading}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmUpload}
-                  className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:bg-blue-400"
-                  disabled={uploading}
-                >
-                  {uploading ? 'Uploading...' : 'Confirm Upload'}
-                </button>
-              </div>
-            </div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+            <Card className="w-full max-w-lg border-0 shadow-2xl">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Confirm Upload</CardTitle>
+                <Button variant="ghost" size="icon" onClick={cancelUpload}>
+                    <X className="h-4 w-4" />
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                  <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-md bg-slate-100">
+                     {selectedFile.type.startsWith('video/') ? (
+                        <video src={uploadPreviewUrl} controls className="h-full w-full object-contain" />
+                     ) : (
+                        <img src={uploadPreviewUrl} alt="Preview" className="h-full w-full object-contain" />
+                     )}
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                     <div className="space-y-1">
+                        <span className="text-slate-500">File Name</span>
+                        <p className="font-medium truncate" title={selectedFile.name}>{selectedFile.name}</p>
+                     </div>
+                     <div className="space-y-1">
+                        <span className="text-slate-500">Duration</span>
+                        <p className="font-medium">{duration} seconds</p>
+                     </div>
+                  </div>
+                  
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="outline" onClick={cancelUpload} disabled={uploading}>
+                      Cancel
+                    </Button>
+                    <Button onClick={confirmUpload} disabled={uploading} className="bg-blue-600 hover:bg-blue-700">
+                      {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {uploading ? 'Uploading...' : 'Confirm Upload'}
+                    </Button>
+                  </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
-        {/* View Modal */}
+        {/* Full View Modal */}
         {viewUrl && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={() => setViewUrl(null)}>
-            <div className="relative max-h-screen max-w-screen-xl" onClick={(e) => e.stopPropagation()}>
-              <button 
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4 backdrop-blur-md" onClick={() => setViewUrl(null)}>
+            <Button 
+                variant="ghost" 
+                size="icon"
+                className="absolute right-4 top-4 text-white hover:bg-white/20"
                 onClick={() => setViewUrl(null)}
-                className="absolute -right-4 -top-4 rounded-full bg-white p-2 text-black shadow hover:bg-gray-200"
-              >
-                ✕
-              </button>
+            >
+                <X className="h-6 w-6" />
+            </Button>
+            
+            <div className="relative max-h-screen w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
                {/\.(mp4|webm|ogg|mov)$/i.test(viewUrl) ? (
-                  <video src={viewUrl} controls autoPlay className="max-h-[85vh] max-w-full rounded shadow-lg" />
+                  <video src={viewUrl} controls autoPlay className="h-full w-full rounded-lg shadow-2xl" />
                ) : (
-                  <img src={viewUrl} alt="Full view" className="max-h-[85vh] max-w-full rounded shadow-lg" />
+                  <img src={viewUrl} alt="Full view" className="h-full w-full object-contain rounded-lg shadow-2xl" />
                )}
             </div>
           </div>
         )}
 
-        {/* List Section */}
-        <div className="rounded-lg bg-white p-6 shadow">
-          <h2 className="mb-4 text-xl font-semibold">Manage Announcements</h2>
-          <div className="space-y-4">
-            {announcements.map((item) => (
-              <div key={item.id} className="flex items-center gap-4 border-b pb-4 last:border-0">
-                <div 
-                  className="h-24 w-32 flex-shrink-0 cursor-pointer overflow-hidden bg-gray-200"
-                  onClick={() => setViewUrl(item.image_url)}
-                  title="Click to view full size"
-                >
-                  {/\.(mp4|webm|ogg|mov)$/i.test(item.image_url) ? (
-                    <video src={item.image_url} className="h-full w-full object-cover" muted loop autoPlay />
-                  ) : (
-                    <img src={item.image_url} alt="" className="h-full w-full object-cover transition-transform hover:scale-110" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Duration: {item.display_duration}s</p>
-                  <p className="text-xs text-gray-400">Created: {new Date(item.created_at).toLocaleDateString()}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => toggleActive(item.id, item.active)}
-                    className={`rounded px-3 py-1 text-sm font-medium ${
-                      item.active 
-                        ? 'bg-green-100 text-green-800 hover:bg-green-200' 
-                        : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                    }`}
-                  >
-                    {item.active ? 'Active' : 'Hidden'}
-                  </button>
-                  <button
-                    onClick={() => deleteAnnouncement(item.id, item.image_url)}
-                    className="rounded bg-red-100 px-3 py-1 text-sm font-medium text-red-800 hover:bg-red-200"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-            {announcements.length === 0 && <p className="text-gray-500">No announcements found.</p>}
-          </div>
-        </div>
       </div>
     </div>
   );

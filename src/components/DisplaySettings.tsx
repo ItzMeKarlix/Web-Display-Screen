@@ -401,6 +401,7 @@ export default function AdminPanel() {
   const [savingOrder, setSavingOrder] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({ default_duration: 10, refresh_interval: 5 });
   const [savingSettings, setSavingSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState('general');
   
   const [duration, setDuration] = useState(10);
   const [title, setTitle] = useState('');
@@ -814,126 +815,155 @@ export default function AdminPanel() {
                     </CardContent>
                 </Card>
 
-                {/* Settings Card */}
+                {/* System Configuration Card (Tabbed) */}
                 <Card className="flex flex-col">
-                    <CardHeader>
+                    <CardHeader className="pb-3">
                         <CardTitle className="flex items-center gap-2">
                             <Settings className="h-5 w-5" />
-                            System Settings
+                            Configuration
                         </CardTitle>
-                        <CardDescription>Global configuration for the display board.</CardDescription>
+                        <CardDescription>Manage system settings and security.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="refreshInterval">Refresh Interval (minutes)</Label>
-                            <Input 
-                                id="refreshInterval" 
-                                type="number" 
-                                min="1"
-                                value={settings.refresh_interval}
-                                onChange={(e) => setSettings({...settings, refresh_interval: Number(e.target.value)})}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') saveSettings();
-                                }}
-                            />
-                            <p className="text-[0.8rem] text-slate-500">
-                                How often the display board checks for new content.
-                            </p>
-                        </div>
-
-                        <div className="space-y-2">
-                            <Label htmlFor="defaultDuration">Default Duration (seconds)</Label>
-                            <Input 
-                                id="defaultDuration" 
-                                type="number" 
-                                min="5"
-                                value={settings.default_duration}
-                                onChange={(e) => setSettings({...settings, default_duration: Number(e.target.value)})}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') saveSettings();
-                                }}
-                            />
-                            <p className="text-[0.8rem] text-slate-500">
-                                Default time for new uploads (can be overridden).
-                            </p>
-                        </div>
-
-                        <Button 
-                            className="w-full" 
-                            onClick={saveSettings}
-                            disabled={savingSettings}
-                        >
-                            {savingSettings ? (
-                                <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    Saving...
-                                </>
-                            ) : (
-                                <>
-                                    <Save className="mr-2 h-4 w-4" />
-                                    Save Settings
-                                </>
-                            )}
-                        </Button>
-                    </CardContent>
-                </Card>
-
-                {/* Security Card */}
-                 <Card className="flex flex-col">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                             {settings.security_enabled ? <Lock className="h-5 w-5 text-green-600" /> : <Unlock className="h-5 w-5 text-slate-400" />}
-                            Security
-                        </CardTitle>
-                        <CardDescription>Control access to the display system.</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="flex items-center justify-between space-x-2">
-                            <Label htmlFor="security-mode" className="flex flex-col space-y-1">
-                                <span>Password Protection</span>
-                                <span className="font-normal text-xs text-muted-foreground">Require login to view content</span>
-                            </Label>
-                            <Switch
-                                id="security-mode"
-                                checked={settings.security_enabled || false}
-                                onCheckedChange={(checked) => setSettings({...settings, security_enabled: checked})}
-                            />
-                        </div>
-
-                         {settings.security_enabled && (
-                            <div className="space-y-2 pt-2 border-t">
-                                <Label htmlFor="adminPassword">Update Access Password</Label>
-                                <div className="relative">
-                                    <KeyRound className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-                                    <Input 
-                                        id="adminPassword" 
-                                        type="password" 
-                                        placeholder="••••••••"
-                                        className="pl-9"
-                                        value={settings.admin_password || ''}
-                                        onChange={(e) => setSettings({...settings, admin_password: e.target.value})}
-                                    />
+                        {/* Tabs Navigation */}
+                        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
+                             <button
+                                onClick={() => setActiveTab('general')}
+                                className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+                                    activeTab === 'general' 
+                                    ? 'bg-white text-slate-900 shadow-sm' 
+                                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50'
+                                }`}
+                             >
+                                <div className="flex items-center justify-center gap-2">
+                                    <Settings className="h-3.5 w-3.5" />
+                                    General
                                 </div>
-                                <p className="text-[0.8rem] text-slate-500">
-                                    Leave blank to keep current password.
-                                </p>
+                             </button>
+                             <button
+                                onClick={() => setActiveTab('security')}
+                                className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+                                    activeTab === 'security' 
+                                    ? 'bg-white text-slate-900 shadow-sm' 
+                                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200/50'
+                                }`}
+                             >
+                                <div className="flex items-center justify-center gap-2">
+                                    {settings.security_enabled ? <Lock className="h-3.5 w-3.5 text-green-600" /> : <Unlock className="h-3.5 w-3.5" />}
+                                    Security
+                                </div>
+                             </button>
+                        </div>
+
+                        {/* General Tab */}
+                        {activeTab === 'general' && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-left-1 duration-200">
+                                <div className="space-y-2">
+                                    <Label htmlFor="refreshInterval">Refresh Interval (minutes)</Label>
+                                    <Input 
+                                        id="refreshInterval" 
+                                        type="number" 
+                                        min="1"
+                                        value={settings.refresh_interval}
+                                        onChange={(e) => setSettings({...settings, refresh_interval: Number(e.target.value)})}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') saveSettings();
+                                        }}
+                                    />
+                                    <p className="text-[0.8rem] text-slate-500">
+                                        How often the display board checks for new content.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="defaultDuration">Default Duration (seconds)</Label>
+                                    <Input 
+                                        id="defaultDuration" 
+                                        type="number" 
+                                        min="5"
+                                        value={settings.default_duration}
+                                        onChange={(e) => setSettings({...settings, default_duration: Number(e.target.value)})}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') saveSettings();
+                                        }}
+                                    />
+                                    <p className="text-[0.8rem] text-slate-500">
+                                        Default time for new uploads (can be overridden).
+                                    </p>
+                                </div>
+
+                                <Button 
+                                    className="w-full" 
+                                    onClick={saveSettings}
+                                    disabled={savingSettings}
+                                >
+                                    {savingSettings ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            Saving...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save className="mr-2 h-4 w-4" />
+                                            Save Settings
+                                        </>
+                                    )}
+                                </Button>
                             </div>
                         )}
-                         <Button 
-                            className="w-full" 
-                            onClick={saveSettings}
-                            disabled={savingSettings}
-                            variant="outline"
-                        >
-                            Update Security
-                        </Button>
+
+                        {/* Security Tab */}
+                        {activeTab === 'security' && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-1 duration-200">
+                                <div className="flex items-center justify-between space-x-2 rounded-md border p-3 shadow-sm">
+                                    <Label htmlFor="security-mode" className="flex flex-col space-y-1">
+                                        <span>Password Protection</span>
+                                        <span className="font-normal text-xs text-muted-foreground">Require login to view content</span>
+                                    </Label>
+                                    <Switch
+                                        id="security-mode"
+                                        checked={settings.security_enabled || false}
+                                        onCheckedChange={(checked) => setSettings({...settings, security_enabled: checked})}
+                                    />
+                                </div>
+
+                                {settings.security_enabled && (
+                                    <div className="space-y-2">
+                                        <Label htmlFor="adminPassword">Update Access Password</Label>
+                                        <div className="relative">
+                                            <KeyRound className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
+                                            <Input 
+                                                id="adminPassword" 
+                                                type="password" 
+                                                placeholder="••••••••"
+                                                className="pl-9"
+                                                value={settings.admin_password || ''}
+                                                onChange={(e) => setSettings({...settings, admin_password: e.target.value})}
+                                            />
+                                        </div>
+                                        <p className="text-[0.8rem] text-slate-500">
+                                            Leave blank to keep current password.
+                                        </p>
+                                    </div>
+                                )}
+                                
+                                <Button 
+                                    className="w-full" 
+                                    onClick={saveSettings}
+                                    disabled={savingSettings}
+                                    variant="outline"
+                                >
+                                    {savingSettings ? 'Saving...' : 'Update Security'}
+                                </Button>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
 
             {/* Right Column: List */}
             <div className="lg:col-span-2">
-                <Card className="flex flex-col h-175">
+                <Card className="flex flex-col h-186">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
                         <div className="flex flex-col space-y-1.5">
                             <CardTitle>Manage Content</CardTitle>

@@ -1,0 +1,17 @@
+---
+import AdminPanel from '../components/DisplaySettings';
+import '../styles/global.css';
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Admin - TV Announcements</title>
+	</head>
+	<body class="bg-gray-100">
+		<AdminPanel client:only="react" />
+	</body>
+</html>

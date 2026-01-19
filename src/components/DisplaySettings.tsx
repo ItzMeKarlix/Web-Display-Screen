@@ -26,7 +26,9 @@ import {
   EyeOff,
   LogOut,
   Heart,
-  Github
+  Github,
+  PlusCircle,
+  List
 } from 'lucide-react';
 
 import { 
@@ -891,13 +893,14 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-slate-50 p-4 md:p-6 lg:p-8">
         <Toaster position="top-right" />
-        <header className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Display Settings</h1>
-            <p className="text-slate-500">Manage the content displayed on your display system.</p>
-          </div>
+        <div className="mx-auto max-w-7xl space-y-6">
+            <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900">Display Settings</h1>
+                <p className="text-slate-500">Manage the content displayed on your display system.</p>
+            </div>
           <div className="flex gap-2">
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -930,39 +933,35 @@ export default function AdminPanel() {
 
         <div className="grid gap-6 lg:grid-cols-3">
             {/* Left Column: Upload & Settings */}
-            <div className="lg:col-span-1 flex flex-col gap-6">
+            <div className="lg:col-span-1 flex flex-col gap-6 lg:h-[calc(100vh-12rem)]">
                 <Card className="shrink-0">
-                    <CardHeader>
-                        <CardTitle>Add New</CardTitle>
-                        <CardDescription>Upload a new image or video display.</CardDescription>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                            <PlusCircle className="h-5 w-5" />
+                            Add New Media
+                        </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="grid w-full items-center gap-1.5">
-                            <Label htmlFor="image">Media File</Label>
                             <div 
-                                className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 transition-colors ${
+                                className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors ${
                                     isDragging ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'
                                 }`}
                                 onDragOver={handleDragOver}
                                 onDragLeave={handleDragLeave}
                                 onDrop={handleDrop}
                             >
-                                <div className="flex flex-col items-center justify-center space-y-2 text-center">
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
+                                <div className="flex flex-col items-center justify-center space-y-1 text-center">
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 mb-1">
                                         {isDragging ? (
-                                            <UploadCloud className="h-6 w-6 text-blue-500" />
+                                            <UploadCloud className="h-5 w-5 text-blue-500" />
                                         ) : (
-                                            <ImagePlus className="h-6 w-6 text-slate-400" />
+                                            <ImagePlus className="h-5 w-5 text-slate-400" />
                                         )}
                                     </div>
-                                    <div className="flex flex-col space-y-1">
-                                        <p className="text-sm font-medium text-slate-700">
-                                            {isDragging ? 'Drop file here' : 'Drag & drop or click to upload'}
-                                        </p>
-                                        <p className="text-xs text-slate-500">
-                                            Images and Videos supported
-                                        </p>
-                                    </div>
+                                    <p className="text-xs font-medium text-slate-700">
+                                        {isDragging ? 'Drop file here' : 'Click to Upload Media'}
+                                    </p>
                                 </div>
                                 <Input
                                     id="image"
@@ -974,22 +973,20 @@ export default function AdminPanel() {
                                 />
                             </div>
                         </div>
-
-                        <div className="grid w-full items-center gap-1.5">
-                        </div>
                     </CardContent>
                 </Card>
 
                 {/* System Configuration Card (Tabbed) */}
-                <Card className="flex flex-col">
-                    <CardHeader className="pb-3">
+                <Card className="flex flex-col flex-1 overflow-hidden">
+                    <CardHeader className="pb-3 shrink-0">
                         <CardTitle className="flex items-center gap-2">
                             <Settings className="h-5 w-5" />
                             Configuration
                         </CardTitle>
                         <CardDescription>Manage system settings and security.</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
+                    <ScrollArea className="flex-1">
+                        <CardContent className="space-y-4 p-6 pt-0">
                         {/* Tabs Navigation */}
                         <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
                              <button
@@ -1109,23 +1106,25 @@ export default function AdminPanel() {
                                                     onChange={(e) => setOldPassword(e.target.value)}
                                                 />
                                             </div>
-                                            <div className="space-y-1.5">
-                                                <Label htmlFor="newPass" className="text-xs">New Password</Label>
-                                                <PasswordInput 
-                                                    id="newPass" 
-                                                    placeholder="New Password"
-                                                    value={newPassword}
-                                                    onChange={(e) => setNewPassword(e.target.value)}
-                                                />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <Label htmlFor="confirmPass" className="text-xs">Confirm New Password</Label>
-                                                <PasswordInput 
-                                                    id="confirmPass" 
-                                                    placeholder="Confirm New Password"
-                                                    value={confirmPassword}
-                                                    onChange={(e) => setConfirmPassword(e.target.value)}
-                                                />
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div className="space-y-1.5">
+                                                    <Label htmlFor="newPass" className="text-xs">New Password</Label>
+                                                    <PasswordInput 
+                                                        id="newPass" 
+                                                        placeholder="New Password"
+                                                        value={newPassword}
+                                                        onChange={(e) => setNewPassword(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <Label htmlFor="confirmPass" className="text-xs">Confirm</Label>
+                                                    <PasswordInput 
+                                                        id="confirmPass" 
+                                                        placeholder="Confirm Password"
+                                                        value={confirmPassword}
+                                                        onChange={(e) => setConfirmPassword(e.target.value)}
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
 
@@ -1155,7 +1154,8 @@ export default function AdminPanel() {
                                 </Button>
                             </div>
                         )}
-                    </CardContent>
+                        </CardContent>
+                    </ScrollArea>
                 </Card>
 
                 {/* Setup Password Modal */}
@@ -1215,10 +1215,13 @@ export default function AdminPanel() {
 
             {/* Right Column: List */}
             <div className="lg:col-span-2">
-                <Card className="flex flex-col h-186">
+                <Card className="flex flex-col h-[500px] lg:h-[calc(100vh-12rem)]">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
                         <div className="flex flex-col space-y-1.5">
-                            <CardTitle>Manage Content</CardTitle>
+                            <CardTitle className="flex items-center gap-2">
+                                <List className="h-5 w-5" />
+                                Manage Content
+                            </CardTitle>
                             <CardDescription>
                                 {announcements.length} active display{announcements.length !== 1 && 's'}
                             </CardDescription>
@@ -1283,17 +1286,18 @@ export default function AdminPanel() {
                 </Card>
             </div>
         </div>
+        </div>
 
-        <div className="fixed bottom-6 right-6 flex items-center gap-2 text-xs text-slate-400 z-40">
-            <div className="flex items-center gap-1 group select-none pointer-events-none">
-                Made with <Heart className="h-3 w-3 text-slate-400 group-hover:fill-red-500 group-hover:text-red-500 transition-colors pointer-events-auto" /> by <span className="font-medium text-slate-500">Karl</span>
+        <div className="mt-8 flex w-full justify-center py-2 lg:fixed lg:bottom-6 lg:right-6 lg:mt-0 lg:w-auto lg:py-0 lg:justify-end items-center gap-2 text-xs text-slate-400 z-40 lg:pointer-events-none">
+            <div className="flex items-center gap-1 group select-none pointer-events-auto">
+                Made with <Heart className="h-3 w-3 text-slate-400 group-hover:fill-red-500 group-hover:text-red-500 transition-colors" /> by <span className="font-medium text-slate-500">Karl</span>
             </div>
             <div className="h-3 w-px bg-slate-200 mx-1"></div>
             <a 
                 href="https://github.com/ItzMeKarlix/" 
                 target="_blank" 
                 rel="noreferrer"
-                className="hover:text-slate-600 transition-colors"
+                className="hover:text-slate-600 transition-colors pointer-events-auto"
                 title="Only Karl"
             >
                 <Github className="h-4 w-4" />

@@ -16,3 +16,15 @@ export interface AppSettings {
   security_enabled?: boolean;
   admin_password?: string; // Only used when updating
 }
+// Wake Lock API types
+export interface WakeLockSentinel {
+  release(): Promise<void>;
+}
+
+declare global {
+  interface Navigator {
+    wakeLock?: {
+      request(type: 'screen' | 'system'): Promise<WakeLockSentinel>;
+    };
+  }
+}

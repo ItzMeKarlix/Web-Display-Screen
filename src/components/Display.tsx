@@ -59,6 +59,54 @@ export default function Display() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(5); // Default 5 mins
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+
+  // Keep TV awake - combines screen wake lock API + periodic input simulation
+  useEffect(() => {
+    // Request wake lock for modern browsers
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen');
+          console.log('Screen Wake Lock acquired');
+        }
+      } catch (err) {
+        console.log('Wake Lock not available, using fallback methods');
+      }
+    };
+
+    requestWakeLock();
+
+    // Re-acquire wake lock if visibility changes
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        wakeLockRef.current?.release();
+        wakeLockRef.current = null;
+      } else {
+        await requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Periodic input simulation every 30 seconds - keeps TV from sleeping
+    const keepAliveInterval = setInterval(() => {
+      // Simulate mouse movement
+      document.body.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      }));
+      // Simulate focus to keep activity detected
+      document.body.focus();
+    }, 30000);
+
+    return () => {
+      clearInterval(keepAliveInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      wakeLockRef.current?.release();
+    };
+  }, []);
 
   // Fetch data
   const fetchAnnouncements = async () => {
@@ -179,6 +227,23 @@ export default function Display() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black group">
+      {/* Invisible background video - keeps LG TV awake during display mode */}
+      <video 
+        autoPlay
+        muted
+        loop
+        playsInline
+        style={{
+          position: 'absolute',
+          width: '1px',
+          height: '1px',
+          opacity: 0,
+          pointerEvents: 'none'
+        }}
+      >
+        <source src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc2FjLW1wNDEAAAAIZnJlZQAAAuhtZGF0AAACrwYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLWNvZGVjIGxpYnMveDI2NC5zbyBjb3B5bGVmdD0wIGNhY2EtbGV2ZWw9MjggcHJlZmlsdGVyPTAgYW9xPTAgcHQ9MCBkZXEtY29sb3JzcGFjZT0wIGhpZXIteD0wIGhpZXItaT0wIGl1cD0wIGFzcGVjdC1yYXRpbz0xIHJhc3VwLW1vZGU9MCBjdXRldnBzPTAgcmE9cyBzc3ItZHk9MCBzcz0wIGItcHlyYW1pZD0wIGNoYXJtYT0wIHJjZ2xvd3A9MCByY2cwPTAgYm93eT0xIGNvYmF0YT0wIGNvZXZjPTAgY2c9MCBjdHJsPTAgc2xpY2VzPTAgb3B0aW1pemVtdj0wIHJlZj0zIGZiPTAgY2F2bGMtY29tcGxpYW50PSBsYXN0LW1idHM9MCBzcHM9MCB2ZWlpPTAgdGlkLXBvY2s9MCBvcGVuZ29wPTAgZGVibG9jaz0wOjAgZGlzdHJ5c3RlPTAgZGVibG9jaz0wOjAgbXRyYT1mYWxzZSBub2pkPjAgbG9va2FoZWFkLWF0cmFzcz1mYWxzZSBzbGljZXM9IDEgc2xpY2VfbWF4X3NpemU9MCBzbGljZV9tYXhfbXVhPTAgc3BsaXRfbWluX2J0bD0gZGlzcF9sZXZlbD0gZGlzcF9kZWxvYXNzPTAgdGFnZWQtY2FzZT0wIHY0X21lPTAgYXBlLWJ5LXBvYT1mYWxzZSBjdXRldnBzPTAgY3JhZnQ9MCBjcmFmdF9taW49IDAgY3JhZnRfbWF4PSAwIGNvZGluZ3RyZWU9IGN0dD0wIHRvb2xzPSBjaGVja3BvaW50PTAgaHdzPSBzbW9vdGhfZXc9IDAgYWhzLWFsd2F5cz0wIHN0aXRjaD0wIGFzeW09MCBhdmctY3Bncy1yYXRlPWZhbHNlIGhtb2NvcT0wIGx1bWE9MCBsb29rYWhlYWR9IGhtPTAgYXJjPTAgc3RzZHQ9IDAgYmlkPTAgYnJmdD0wIGdvb3A9MCBzdGFydHI9IDAgbWluYXRyPTAgbW9zaW49IDAgc2FkPTAgcGd4PSAwIHRzZz0wIHdhZm9ybT0wIHdweT0wIGNodz0gYXE9IDE6MSBZCG09Ig0BDAIgLCAiOiIsCnl1dmogZXhjZXNzIHhkYXRhAAB3BQGsj+Q=" type="video/mp4" />
+      </video>
+
       {announcements.map((item, index) => (
         <div
           key={item.id}

@@ -3,6 +3,57 @@ import { supabase } from '../lib/supabase';
 import type { Announcement } from '../types';
 import { ChevronLeft, ChevronRight, Settings, Loader2 } from 'lucide-react';
 
+const AnnouncementMedia = ({ 
+  item, 
+  isActive, 
+  shouldLoad 
+}: { 
+  item: Announcement; 
+  isActive: boolean; 
+  shouldLoad: boolean 
+}) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const isVideo = /\.(mp4|webm|ogg|mov)$/i.test(item.image_url);
+
+  useEffect(() => {
+    if (videoRef.current) {
+      if (isActive) {
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(error => {
+            console.debug("Auto-play prevented", error);
+          });
+        }
+      } else {
+        videoRef.current.pause();
+      }
+    }
+  }, [isActive]);
+
+  if (!shouldLoad) return null;
+
+  if (isVideo) {
+    return (
+      <video 
+        ref={videoRef}
+        src={item.image_url} 
+        className="max-h-full max-w-full object-contain"
+        muted
+        loop
+        playsInline
+      /> 
+    );
+  }
+
+  return (
+    <img 
+      src={item.image_url} 
+      alt="Announcement" 
+      className="max-h-full max-w-full object-contain"
+    />
+  );
+};
+
 export default function Display() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -44,9 +95,10 @@ export default function Display() {
 
   // Poll for updates
   useEffect(() => {
-    if (refreshInterval <= 0) return;
+    // Safety check: Ensure interval is at least 1 minute
+    const safeInterval = Math.max(1, refreshInterval); 
+    const intervalMs = safeInterval * 60 * 1000;
     
-    const intervalMs = refreshInterval * 60 * 1000;
     const pollInterval = setInterval(fetchAnnouncements, intervalMs);
     return () => clearInterval(pollInterval);
   }, [refreshInterval]);
@@ -111,6 +163,20 @@ export default function Display() {
     setCurrentIndex((prev) => (prev + 1) % announcements.length);
   };
 
+  const isItemLoaded = (index: number) => {
+      // Always load if there are few items
+      if (announcements.length <= 1) return true;
+      
+      const len = announcements.length;
+      // Load current, next (buffer), and prev (for transitions)
+      const isCurrent = index === currentIndex;
+      const isNext = index === (currentIndex + 1) % len;
+      // Calculate previous correctly with modulo
+      const isPrev = index === (currentIndex - 1 + len) % len;
+      
+      return isCurrent || isNext || isPrev;
+  };
+
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black group">
       {announcements.map((item, index) => (
@@ -118,22 +184,11 @@ export default function Display() {
           key={item.id}
           className={`absolute inset-0 flex items-center justify-center transition-all duration-1000 ease-in-out ${getTransitionClass(index, currentIndex, item.transition_type)}`}
         >
-            {/\.(mp4|webm|ogg|mov)$/i.test(item.image_url) ? (
-              <video 
-                src={item.image_url} 
-                className="max-h-full max-w-full object-contain"
-                autoPlay
-                muted
-                loop
-                playsInline
-              /> 
-            ) : (
-              <img 
-                  src={item.image_url} 
-                  alt="Announcement" 
-                  className="max-h-full max-w-full object-contain"
-              />
-            )}
+            <AnnouncementMedia 
+              item={item} 
+              isActive={index === currentIndex} 
+              shouldLoad={isItemLoaded(index)}
+            />
         </div>
       ))}
       

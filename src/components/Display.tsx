@@ -61,8 +61,18 @@ export default function Display() {
   const [refreshInterval, setRefreshInterval] = useState(5); // Default 5 mins
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
-  // Keep TV awake - combines screen wake lock API + periodic input simulation
+  // Keep TV awake - combines screen wake lock API + periodic input simulation + hidden audio
   useEffect(() => {
+    // Create and play hidden audio to prevent sleep
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const audioOscillator = audioContext.createOscillator();
+    const audioGain = audioContext.createGain();
+    audioOscillator.connect(audioGain);
+    audioGain.connect(audioContext.destination);
+    audioGain.gain.value = 0; // Silent (mute)
+    audioOscillator.frequency.value = 250;
+    audioOscillator.start();
+
     // Request wake lock for modern browsers
     const requestWakeLock = async () => {
       try {
@@ -89,22 +99,33 @@ export default function Display() {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Periodic input simulation every 30 seconds - keeps TV from sleeping
+    // Aggressive keep-alive: every 10 seconds instead of 30
     const keepAliveInterval = setInterval(() => {
       // Simulate mouse movement
       document.body.dispatchEvent(new MouseEvent('mousemove', {
         bubbles: true,
         cancelable: true,
-        view: window
+        view: window,
+        clientX: Math.random() * 10,
+        clientY: Math.random() * 10
       }));
-      // Simulate focus to keep activity detected
+      
+      // Simulate keyboard press (Shift key - non-intrusive)
+      document.body.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Shift',
+        code: 'ShiftLeft',
+        bubbles: true
+      }));
+      
+      // Simulate focus
       document.body.focus();
-    }, 30000);
+    }, 10000);
 
     return () => {
       clearInterval(keepAliveInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       wakeLockRef.current?.release();
+      audioOscillator.stop();
     };
   }, []);
 

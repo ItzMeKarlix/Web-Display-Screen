@@ -60,19 +60,55 @@ export default function Display() {
   const [loading, setLoading] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(5); // Default 5 mins
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
-  // Keep TV awake - combines screen wake lock API + periodic input simulation + hidden audio
+  // Canvas animation loop - keeps TV awake by continuous rendering (makes it think video is playing)
   useEffect(() => {
-    // Create and play hidden audio to prevent sleep
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const audioOscillator = audioContext.createOscillator();
-    const audioGain = audioContext.createGain();
-    audioOscillator.connect(audioGain);
-    audioGain.connect(audioContext.destination);
-    audioGain.gain.value = 0; // Silent (mute)
-    audioOscillator.frequency.value = 250;
-    audioOscillator.start();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Set canvas to fill screen
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Subtle animation that keeps GPU active without being visible
+    let frameCount = 0;
+    const animate = () => {
+      frameCount++;
+      
+      // Draw a subtle black with pixel variation to trigger GPU activity
+      // This is imperceptible to user but keeps TV awake
+      const variation = (frameCount % 2) * 0.0001; // Very subtle change
+      ctx.fillStyle = `rgba(0, 0, 0, ${1 - variation})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      animationFrameRef.current = requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    // Handle window resize
+    const handleResize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  // Keep TV awake - screen wake lock API + periodic input simulation
+  useEffect(() => {
     // Request wake lock for modern browsers
     const requestWakeLock = async () => {
       try {
@@ -81,7 +117,7 @@ export default function Display() {
           console.log('Screen Wake Lock acquired');
         }
       } catch (err) {
-        console.log('Wake Lock not available, using fallback methods');
+        console.log('Wake Lock not available');
       }
     };
 
@@ -99,9 +135,8 @@ export default function Display() {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Aggressive keep-alive: every 10 seconds instead of 30
+    // Periodic input simulation every 5 seconds to keep system aware
     const keepAliveInterval = setInterval(() => {
-      // Simulate mouse movement
       document.body.dispatchEvent(new MouseEvent('mousemove', {
         bubbles: true,
         cancelable: true,
@@ -109,23 +144,12 @@ export default function Display() {
         clientX: Math.random() * 10,
         clientY: Math.random() * 10
       }));
-      
-      // Simulate keyboard press (Shift key - non-intrusive)
-      document.body.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'Shift',
-        code: 'ShiftLeft',
-        bubbles: true
-      }));
-      
-      // Simulate focus
-      document.body.focus();
-    }, 10000);
+    }, 5000);
 
     return () => {
       clearInterval(keepAliveInterval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       wakeLockRef.current?.release();
-      audioOscillator.stop();
     };
   }, []);
 
@@ -248,6 +272,17 @@ export default function Display() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black group">
+      {/* Hidden canvas - continuous rendering keeps TV awake (thinks video is playing) */}
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: 'absolute',
+          width: '100%',
+          height: '100%',
+          zIndex: 0,
+          pointerEvents: 'none'
+        }}
+      />
       {/* Invisible background video - keeps LG TV awake during display mode */}
       <video 
         autoPlay
@@ -268,7 +303,7 @@ export default function Display() {
       {announcements.map((item, index) => (
         <div
           key={item.id}
-          className={`absolute inset-0 flex items-center justify-center transition-all duration-1000 ease-in-out ${getTransitionClass(index, currentIndex, item.transition_type)}`}
+          className={`absolute inset-0 flex items-center justify-center transition-all duration-1000 ease-in-out z-10 ${getTransitionClass(index, currentIndex, item.transition_type)}`}
         >
             <AnnouncementMedia 
               item={item} 
@@ -277,7 +312,6 @@ export default function Display() {
             />
         </div>
       ))}
-      
       {/* Admin Button */}
       <div className="absolute top-4 right-4 z-50 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
         <a 

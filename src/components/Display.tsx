@@ -59,6 +59,8 @@ export default function Display() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(5); // Default 5 mins
+  const [keepAliveActive, setKeepAliveActive] = useState(false);
+  const [wakeLockStatus, setWakeLockStatus] = useState('initializing');
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -75,16 +77,35 @@ export default function Display() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    // Subtle animation that keeps GPU active without being visible
+    // Aggressive animation that keeps GPU and CPU very active
     let frameCount = 0;
     const animate = () => {
       frameCount++;
       
-      // Draw a subtle black with pixel variation to trigger GPU activity
-      // This is imperceptible to user but keeps TV awake
-      const variation = (frameCount % 2) * 0.0001; // Very subtle change
-      ctx.fillStyle = `rgba(0, 0, 0, ${1 - variation})`;
+      // Draw with visible variation to ensure browser doesn't optimize it away
+      // Use different patterns to force GPU work each frame
+      const pattern = frameCount % 3;
+      
+      if (pattern === 0) {
+        // Draw black
+        ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+      } else if (pattern === 1) {
+        // Draw very dark gray (imperceptible but forces render)
+        ctx.fillStyle = 'rgba(1, 1, 1, 1)';
+      } else {
+        // Draw black again
+        ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+      }
+      
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Every 300 frames, draw a tiny dot at varying positions (forces buffer clear)
+      if (frameCount % 300 === 0) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        const x = Math.random() * canvas.width;
+        const y = Math.random() * canvas.height;
+        ctx.fillRect(x, y, 1, 1);
+      }
       
       animationFrameRef.current = requestAnimationFrame(animate);
     };
@@ -107,49 +128,96 @@ export default function Display() {
     };
   }, []);
 
-  // Keep TV awake - screen wake lock API + periodic input simulation
+  // Aggressive wake lock maintenance - continuously reacquire if lost
   useEffect(() => {
-    // Request wake lock for modern browsers
-    const requestWakeLock = async () => {
+    const maintainWakeLock = async () => {
       try {
         if ('wakeLock' in navigator) {
-          wakeLockRef.current = await navigator.wakeLock.request('screen');
-          console.log('Screen Wake Lock acquired');
+          // Only request if we don't already have one
+          if (!wakeLockRef.current || await (wakeLockRef.current as any).released) {
+            wakeLockRef.current = await navigator.wakeLock.request('screen');
+            setWakeLockStatus('active');
+            console.log('✓ Wake lock maintained/reacquired');
+          }
+        } else {
+          setWakeLockStatus('unavailable');
         }
       } catch (err) {
-        console.log('Wake Lock not available');
+        setWakeLockStatus('failed');
+        console.error('Failed to maintain wake lock:', err);
       }
     };
 
-    requestWakeLock();
+    maintainWakeLock(); // Try immediately
 
-    // Re-acquire wake lock if visibility changes
-    const handleVisibilityChange = async () => {
-      if (document.hidden) {
-        wakeLockRef.current?.release();
-        wakeLockRef.current = null;
-      } else {
-        await requestWakeLock();
+    // Check and maintain wake lock every 10 seconds
+    const maintenanceInterval = setInterval(maintainWakeLock, 10000);
+    
+    // Request fullscreen if possible
+    const requestFullscreen = async () => {
+      try {
+        if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+          console.log('✓ Fullscreen mode enabled');
+        }
+      } catch (err) {
+        console.log('Fullscreen not available:', err);
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // Try fullscreen on next interaction
+    const enableFullscreenOnClick = () => {
+      requestFullscreen();
+      document.removeEventListener('click', enableFullscreenOnClick);
+    };
+    
+    // Listen for any click to enter fullscreen
+    document.addEventListener('click', enableFullscreenOnClick);
 
-    // Periodic input simulation every 5 seconds to keep system aware
+    return () => {
+      clearInterval(maintenanceInterval);
+      document.removeEventListener('click', enableFullscreenOnClick);
+    };
+  }, []);
+
+  // VERY aggressive keep-alive input simulation - reinforces wake lock
+  useEffect(() => {
     const keepAliveInterval = setInterval(() => {
+      setKeepAliveActive(true);
+      
+      // Mouse move
       document.body.dispatchEvent(new MouseEvent('mousemove', {
         bubbles: true,
         cancelable: true,
         view: window,
-        clientX: Math.random() * 10,
-        clientY: Math.random() * 10
+        clientX: Math.random() * window.innerWidth,
+        clientY: Math.random() * window.innerHeight
       }));
-    }, 5000);
+      
+      // Keyboard events (spacebar)
+      document.body.dispatchEvent(new KeyboardEvent('keydown', {
+        key: ' ',
+        code: 'Space',
+        bubbles: true,
+        cancelable: true
+      }));
+      
+      document.body.dispatchEvent(new KeyboardEvent('keyup', {
+        key: ' ',
+        code: 'Space',
+        bubbles: true,
+        cancelable: true
+      }));
+
+      // Reset indicator
+      setTimeout(() => setKeepAliveActive(false), 500);
+    }, 2000); // Every 2 seconds for maximum aggressiveness
+
+    console.log('Input simulation started');
 
     return () => {
       clearInterval(keepAliveInterval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      wakeLockRef.current?.release();
+      console.log('Input simulation stopped');
     };
   }, []);
 
@@ -313,7 +381,13 @@ export default function Display() {
         </div>
       ))}
       {/* Admin Button */}
-      <div className="absolute top-4 right-4 z-50 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+      <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+        {/* Status Indicator */}
+        <div className="flex items-center gap-2 text-xs text-white/60 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+          <div className={`w-2 h-2 rounded-full ${wakeLockStatus === 'active' ? 'bg-green-500' : wakeLockStatus === 'unavailable' ? 'bg-yellow-500' : 'bg-red-500'}`} />
+          <span>Wake: {wakeLockStatus}</span>
+          {keepAliveActive && <span className="text-green-400">●</span>}
+        </div>
         <a 
             href="/settings"
             className="flex h-10 w-10 items-center justify-center rounded-full bg-black/30 text-white/70 backdrop-blur-sm transition-all hover:bg-black/50 hover:text-white hover:scale-110"

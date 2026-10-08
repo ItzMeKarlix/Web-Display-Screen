@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import type { Announcement, AppSettings } from '../types';
+import type { Announcement, AppSettings, Scene } from '../types';
 import toast, { Toaster } from 'react-hot-toast';
 import { 
   Trash2, 
@@ -424,6 +424,10 @@ function SortableAnnouncementRow({
 
 export default function AdminPanel() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [scenes, setScenes] = useState<Scene[]>([]);
+  const [selectedSceneId, setSelectedSceneId] = useState('');
+  const [activeSceneId, setActiveSceneId] = useState('');
+  const [newSceneName, setNewSceneName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [hasOrderChanges, setHasOrderChanges] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
@@ -451,8 +455,8 @@ export default function AdminPanel() {
   const scrollSentinelRef = useRef<HTMLDivElement>(null);
 
   // Upload Modal State
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadPreviewUrls, setUploadPreviewUrls] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
 
   // View Modal State
@@ -466,24 +470,30 @@ export default function AdminPanel() {
   );
   
   const fetchAnnouncements = async () => {
-    const { data: announcementsData } = await supabase
+    const { data: scenesData } = await supabase.from('scenes').select('*').order('created_at');
+    if (scenesData) setScenes(scenesData);
+
+    const { data: settingsData } = await supabase
+      .from('settings')
+      .select('id, refresh_interval, default_duration, security_enabled, active_scene_id')
+      .eq('id', 1)
+      .single();
+    const sceneId = selectedSceneId || settingsData?.active_scene_id || scenesData?.[0]?.id || '';
+    if (settingsData) {
+      setSettings(settingsData);
+      setActiveSceneId(settingsData.active_scene_id || '');
+      if (!selectedSceneId) setSelectedSceneId(sceneId);
+    }
+
+    let announcementsQuery = supabase
       .from('announcements')
       .select('*')
       .order('order_index', { ascending: true })
       .order('created_at', { ascending: false });
+    if (sceneId) announcementsQuery = announcementsQuery.eq('scene_id', sceneId);
+    const { data: announcementsData } = await announcementsQuery;
     
     if (announcementsData) setAnnouncements(announcementsData);
-    
-    // Also fetch settings (Security: Don't select admin_password)
-    const { data: settingsData } = await supabase
-      .from('settings')
-      .select('id, refresh_interval, default_duration, security_enabled')
-      .single();
-      
-    if (settingsData) {
-        // @ts-ignore - Supabase types might be strict, but we know what we asked for
-        setSettings(settingsData);
-    }
     
     // Check if password is set
     const { data: hasPass } = await supabase.rpc('is_password_set');
@@ -542,6 +552,10 @@ export default function AdminPanel() {
   };
 
   const handleSetupPassword = async () => {
+    if (setupPassword.length < 8) {
+        toast.error("Password must be at least 8 characters");
+        return;
+    }
     if (setupPassword !== setupConfirm) {
         toast.error("Passwords do not match");
         return;
@@ -550,15 +564,17 @@ export default function AdminPanel() {
 
     setSavingSettings(true);
     try {
-        const { error } = await supabase
-            .from('settings')
-            .update({ 
-                admin_password: setupPassword,
-                security_enabled: true 
-            })
-            .eq('id', 1);
+        const { data: created, error } = await supabase
+            .rpc('setup_admin_password', { new_password: setupPassword });
 
         if (error) throw error;
+        if (!created) throw new Error('Password setup failed');
+
+        const { error: settingsError } = await supabase
+            .from('settings')
+            .update({ security_enabled: true })
+            .eq('id', 1);
+        if (settingsError) throw settingsError;
 
         toast.success("Security enabled and password set");
         setSettings(prev => ({ ...prev, security_enabled: true }));
@@ -633,21 +649,54 @@ export default function AdminPanel() {
   // Cleanup preview URL on unmount or change
   useEffect(() => {
     return () => {
-      if (uploadPreviewUrl) URL.revokeObjectURL(uploadPreviewUrl);
+      uploadPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [uploadPreviewUrl]);
+  }, [uploadPreviewUrls]);
 
-  const processFile = (file: File) => {
-    setSelectedFile(file);
-    setUploadPreviewUrl(URL.createObjectURL(file));
-    if (!title) {
-        setTitle(file.name.split('.').slice(0, -1).join('.'));
+  const MAX_UPLOAD_FILES = 20;
+  const SUPPORTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/bmp']);
+  const SUPPORTED_IMAGE_EXTENSIONS = /\.(jpe?g|png|webp|avif|bmp)$/i;
+  const isStaticImage = (file: File) => SUPPORTED_IMAGE_TYPES.has(file.type.toLowerCase()) && SUPPORTED_IMAGE_EXTENSIONS.test(file.name);
+
+  const processFiles = (incomingFiles: File[]) => {
+    const rejected = incomingFiles.filter((file) => !isStaticImage(file));
+    const accepted = incomingFiles.filter(isStaticImage).slice(0, MAX_UPLOAD_FILES);
+    if (rejected.length > 0) toast.error('Only static JPG, PNG, WebP, AVIF, and BMP images are supported. GIFs, videos, and animated media are rejected.');
+    if (incomingFiles.length > MAX_UPLOAD_FILES) toast.error(`Only the first ${MAX_UPLOAD_FILES} valid images were selected.`);
+    if (accepted.length === 0) return;
+    setSelectedFiles(accepted);
+    setUploadPreviewUrls(accepted.map((file) => URL.createObjectURL(file)));
+    if (!title && accepted.length === 1) setTitle(accepted[0].name.replace(/\.[^.]+$/, ''));
+  };
+
+  const activateScene = async (sceneId: string) => {
+    const { error } = await supabase.rpc('activate_scene', { target_scene_id: sceneId });
+    if (error) {
+      toast.error(error.message || 'Scene must contain an active image');
+      return;
     }
+    setActiveSceneId(sceneId);
+    toast.success('Scene is now live on the display');
+    fetchAnnouncements();
+  };
+
+  const createScene = async () => {
+    const name = newSceneName.trim();
+    if (!name) return;
+    const { data, error } = await supabase.from('scenes').insert({ name }).select().single();
+    if (error) {
+      toast.error(error.message || 'Could not create scene');
+      return;
+    }
+    setScenes((current) => [...current, data]);
+    setSelectedSceneId(data.id);
+    setNewSceneName('');
+    toast.success(`Scene “${name}” created`);
   };
 
   const onFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files.length > 0) {
-      processFile(event.target.files[0]);
+      processFiles(Array.from(event.target.files));
       event.target.value = ''; 
     }
   };
@@ -667,71 +716,53 @@ export default function AdminPanel() {
     setIsDragging(false);
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-        processFile(file);
-      } else {
-        toast.error('Please upload an image or video file');
-      }
+      processFiles(Array.from(e.dataTransfer.files));
     }
   };
 
   const cancelUpload = () => {
-    if (selectedFile) {
+    if (selectedFiles.length > 0) {
         toast('Upload cancelled', { icon: '🚫' });
     }
-    setSelectedFile(null);
-    setUploadPreviewUrl(null);
+    setSelectedFiles([]);
+    setUploadPreviewUrls([]);
     setTitle('');
   };
 
   const confirmUpload = async () => {
-    if (!selectedFile) return;
+    if (selectedFiles.length === 0) return;
 
     const loadingToast = toast.loading('Uploading media...');
+    const uploadedPaths: string[] = [];
 
     try {
       setUploading(true);
-      
-      const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${crypto.randomUUID()}.${fileExt}`;
-      const filePath = `${fileName}`;
-
-      // 1. Upload to Storage
-      const { error: uploadError } = await supabase.storage
-        .from('announcements')
-        .upload(filePath, selectedFile, {
-            cacheControl: '3600',
-            upsert: false
+      const records: Array<{ image_url: string; title: string; display_duration: number; active: boolean; scene_id: string }> = [];
+      for (const file of selectedFiles) {
+        const fileExt = file.name.split('.').pop()!.toLowerCase();
+        const filePath = `${crypto.randomUUID()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from('announcements').upload(filePath, file, {
+          cacheControl: '31536000', upsert: false, contentType: file.type,
         });
-
-      if (uploadError) {
-        throw uploadError;
+        if (uploadError) throw uploadError;
+        uploadedPaths.push(filePath);
+        const { data: { publicUrl } } = supabase.storage.from('announcements').getPublicUrl(filePath);
+        records.push({ image_url: publicUrl, title: title || file.name.replace(/\.[^.]+$/, ''), display_duration: duration, active: true, scene_id: selectedSceneId });
       }
 
-      // 2. Get Public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('announcements')
-        .getPublicUrl(filePath);
+      const { error: dbError } = await supabase.from('announcements').insert(records);
 
-      // 3. Save to Database
-      const { error: dbError } = await supabase
-        .from('announcements')
-        .insert([
-          { 
-            image_url: publicUrl,
-            title: title || selectedFile.name,
-            display_duration: duration,
-            active: true 
-          },
-        ]);
-
-      if (dbError) throw dbError;
+      if (dbError) {
+        throw dbError;
+      }
       
-      toast.success('Display uploaded successfully!');
+      toast.success(`${records.length} image${records.length === 1 ? '' : 's'} uploaded successfully!`);
       fetchAnnouncements(); // Refresh list
       cancelUpload(); // Close modal
     } catch (error: any) {
+      if (uploadedPaths.length > 0) {
+        await supabase.storage.from('announcements').remove(uploadedPaths);
+      }
       console.error(error);
       toast.error(error.message || 'Error uploading display');
     } finally {
@@ -888,7 +919,7 @@ export default function AdminPanel() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('display_board_auth');
+    sessionStorage.removeItem('display_board_auth');
     window.location.reload();
   };
 
@@ -942,6 +973,41 @@ export default function AdminPanel() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                        <div className="space-y-2 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                                <Label htmlFor="scene-select">Scene</Label>
+                                {activeSceneId === selectedSceneId && selectedSceneId && (
+                                    <span className="text-xs font-medium text-green-700">Live on display</span>
+                                )}
+                            </div>
+                            <select
+                                id="scene-select"
+                                value={selectedSceneId}
+                                onChange={(e) => { setSelectedSceneId(e.target.value); }}
+                                className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                            >
+                                {scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.name}</option>)}
+                            </select>
+                            <div className="flex gap-2">
+                                <Input
+                                    value={newSceneName}
+                                    onChange={(e) => setNewSceneName(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') createScene(); }}
+                                    placeholder="New scene name"
+                                    aria-label="New scene name"
+                                />
+                                <Button type="button" variant="outline" onClick={createScene}>Create</Button>
+                            </div>
+                            <Button
+                                type="button"
+                                className="w-full"
+                                onClick={() => activateScene(selectedSceneId)}
+                                disabled={!selectedSceneId || activeSceneId === selectedSceneId}
+                            >
+                                {activeSceneId === selectedSceneId ? 'Currently Live' : 'Show This Scene'}
+                            </Button>
+                            <p className="text-xs text-slate-500">Uploads go into the selected scene. The TV switches automatically within 10 seconds after activation.</p>
+                        </div>
                         <div className="grid w-full items-center gap-1.5">
                             <div 
                                 className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors ${
@@ -960,13 +1026,14 @@ export default function AdminPanel() {
                                         )}
                                     </div>
                                     <p className="text-xs font-medium text-slate-700">
-                                        {isDragging ? 'Drop file here' : 'Click to Upload Media'}
+                                        {isDragging ? 'Drop images here' : 'Click to Upload Images'}
                                     </p>
                                 </div>
                                 <Input
                                     id="image"
                                     type="file"
-                                    accept="image/*,video/*"
+                                    accept=".jpg,.jpeg,.png,.webp,.avif,.bmp"
+                                    multiple
                                     onChange={onFileSelect}
                                     disabled={uploading}
                                     className="absolute inset-0 cursor-pointer opacity-0 h-full w-full"
@@ -1305,22 +1372,22 @@ export default function AdminPanel() {
         </div>
 
         {/* Upload Confirmation Modal */}
-        {selectedFile && uploadPreviewUrl && (
+        {selectedFiles.length > 0 && uploadPreviewUrls.length > 0 && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
             <Card className="w-full max-w-lg border-0 shadow-2xl">
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Confirm Upload</CardTitle>
+                <CardTitle>Confirm Upload ({selectedFiles.length} images)</CardTitle>
                 <Button variant="ghost" size="icon" onClick={cancelUpload}>
                     <X className="h-4 w-4" />
                 </Button>
               </CardHeader>
               <CardContent className="space-y-4">
-                  <div className="flex aspect-video w-full items-center justify-center overflow-hidden rounded-md bg-slate-100">
-                     {selectedFile.type.startsWith('video/') ? (
-                        <video src={uploadPreviewUrl} controls className="h-full w-full object-contain" />
-                     ) : (
-                        <img src={uploadPreviewUrl} alt="Preview" className="h-full w-full object-contain" />
-                     )}
+                  <div className="grid max-h-72 grid-cols-2 gap-2 overflow-y-auto rounded-md bg-slate-100 p-2 sm:grid-cols-3">
+                     {uploadPreviewUrls.map((url, index) => (
+                       <div key={url} className="aspect-video overflow-hidden rounded bg-white">
+                         <img src={url} alt={`Preview ${index + 1}`} className="h-full w-full object-contain" />
+                       </div>
+                     ))}
                   </div>
                   
                   <div className="grid gap-4 text-sm">

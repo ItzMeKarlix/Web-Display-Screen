@@ -59,6 +59,7 @@ export default function Display() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(5); // Default 5 mins
+  const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
   const [keepAliveActive, setKeepAliveActive] = useState(false);
   const [wakeLockStatus, setWakeLockStatus] = useState('initializing');
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -223,10 +224,25 @@ export default function Display() {
 
   // Fetch data
   const fetchAnnouncements = async () => {
-    // 1. Fetch announcements
+    // Read the active scene first so a scene change is picked up automatically by the TV.
+    const { data: settings } = await supabase
+      .from('settings')
+      .select('refresh_interval, active_scene_id')
+      .eq('id', 1)
+      .single();
+
+    if (!settings?.active_scene_id) {
+      setLoading(false);
+      return;
+    }
+
+    const sceneChanged = activeSceneId !== null && activeSceneId !== settings.active_scene_id;
+
+    // 1. Fetch only the active scene's announcements.
     const { data, error } = await supabase
       .from('announcements')
       .select('*')
+      .eq('scene_id', settings.active_scene_id)
       .eq('active', true)
       .order('order_index', { ascending: true })
       .order('created_at', { ascending: false });
@@ -234,15 +250,13 @@ export default function Display() {
     if (error) {
       console.error('Error fetching announcements:', error);
     } else {
-      setAnnouncements(data || []);
+      if (data && data.length > 0) {
+        setAnnouncements(data);
+        if (sceneChanged) setCurrentIndex(0);
+        setActiveSceneId(settings.active_scene_id);
+      }
     }
 
-    // 2. Fetch settings
-    const { data: settings } = await supabase
-        .from('settings')
-        .select('refresh_interval')
-        .single();
-    
     if (settings) {
         setRefreshInterval(settings.refresh_interval);
     }
@@ -256,13 +270,12 @@ export default function Display() {
 
   // Poll for updates
   useEffect(() => {
-    // Safety check: Ensure interval is at least 1 minute
-    const safeInterval = Math.max(1, refreshInterval); 
-    const intervalMs = safeInterval * 60 * 1000;
+    // Keep this polling interval independent from the content refresh setting so scene changes appear promptly.
+    const intervalMs = 10 * 1000;
     
     const pollInterval = setInterval(fetchAnnouncements, intervalMs);
     return () => clearInterval(pollInterval);
-  }, [refreshInterval]);
+  }, []);
 
   // Cycle logic
   useEffect(() => {

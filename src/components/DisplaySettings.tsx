@@ -16,9 +16,6 @@ import {
   Settings,
   Save,
   ChevronDown,
-  ArrowUp,
-  ArrowDown,
-  GripVertical,
   ImageOff,
   Lock,
   Unlock,
@@ -166,7 +163,9 @@ function EditableDuration({ id, initialDuration, onSave }: { id: string, initial
     return (
       <div className="flex items-center gap-2">
         <Input 
-          type="number"
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
           value={value}
           onChange={(e) => setValue(Number(e.target.value))}
           className="h-6 w-16 text-xs"
@@ -275,10 +274,6 @@ interface SortableRowProps {
   toggleActive: (id: string, checked: boolean) => void;
   deleteAnnouncement: (id: string, imageUrl: string) => void;
   setViewUrl: (url: string) => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  isFirst: boolean;
-  isLast: boolean;
 }
 
 function SortableAnnouncementRow({ 
@@ -287,11 +282,7 @@ function SortableAnnouncementRow({
   updateDuration, 
   toggleActive, 
   deleteAnnouncement, 
-  setViewUrl,
-  onMoveUp,
-  onMoveDown,
-  isFirst,
-  isLast
+  setViewUrl
 }: SortableRowProps) {
   const {
     attributes,
@@ -312,45 +303,12 @@ function SortableAnnouncementRow({
 
   return (
     <div 
-        ref={setNodeRef} 
+        ref={setNodeRef}
+        {...attributes}
+        {...listeners}
         style={style} 
-        className={`flex flex-col gap-4 rounded-lg border p-4 sm:flex-row sm:items-center shadow-sm touch-none ${isDragging ? 'bg-slate-50 border-blue-200' : 'bg-white'}`}
+        className={`flex cursor-grab flex-col gap-4 rounded-lg border p-4 shadow-sm touch-none active:cursor-grabbing sm:flex-row sm:items-center ${isDragging ? 'bg-slate-50 border-blue-200' : 'bg-white'}`}
     >
-        {/* Controls Column (Desktop) */}
-        <div className="hidden sm:flex flex-col items-center gap-1 mr-2 shrink-0">
-             <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-5 w-6 text-slate-400 hover:bg-white hover:text-slate-900"
-                onClick={onMoveUp}
-                disabled={isFirst}
-                title="Move Up"
-            >
-                <ArrowUp className="h-3 w-3" />
-            </Button>
-
-            {/* Drag Handle */}
-            <div 
-                {...attributes} 
-                {...listeners} 
-                className="cursor-grab active:cursor-grabbing p-1 text-slate-300 hover:text-slate-600 rounded-md hover:bg-slate-100"
-                title="Drag to reorder"
-            >
-                <GripVertical className="h-5 w-5" />
-            </div>
-
-             <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-5 w-6 text-slate-400 hover:bg-white hover:text-slate-900"
-                onClick={onMoveDown}
-                disabled={isLast}
-                title="Move Down"
-            >
-                <ArrowDown className="h-3 w-3" />
-            </Button>
-        </div>
-
         <MediaThumbnail url={item.image_url} onClick={() => setViewUrl(item.image_url)} />
 
         {/* Info */}
@@ -375,11 +333,6 @@ function SortableAnnouncementRow({
 
         {/* Actions */}
         <div className="flex items-center justify-between gap-4 sm:justify-end">
-            {/* Drag Handle for Mobile */}
-             <div {...attributes} {...listeners} className="sm:hidden flex cursor-grab active:cursor-grabbing p-2 text-slate-400">
-                <GripVertical className="h-5 w-5" />
-            </div>
-
             <div className="flex items-center gap-2">
                 <Label htmlFor={`active-${item.id}`} className="text-xs text-slate-600">
                     {item.active ? 'Active' : 'Hidden'}
@@ -427,9 +380,8 @@ export default function AdminPanel() {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [selectedSceneId, setSelectedSceneId] = useState('');
   const [activeSceneId, setActiveSceneId] = useState('');
-  const [newSceneName, setNewSceneName] = useState('');
+  const [sceneToDelete, setSceneToDelete] = useState<Scene | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [hasOrderChanges, setHasOrderChanges] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({ default_duration: 10, refresh_interval: 5 });
   const [savingSettings, setSavingSettings] = useState(false);
@@ -457,20 +409,31 @@ export default function AdminPanel() {
   // Upload Modal State
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadPreviewUrls, setUploadPreviewUrls] = useState<string[]>([]);
+  const [uploadSceneId, setUploadSceneId] = useState('');
   const [isDragging, setIsDragging] = useState(false);
 
   // View Modal State
   const [viewUrl, setViewUrl] = useState<string | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
   
   const fetchAnnouncements = async () => {
-    const { data: scenesData } = await supabase.from('scenes').select('*').order('created_at');
+    let { data: scenesData } = await supabase.from('scenes').select('*').order('created_at');
+    if (scenesData && scenesData.length === 0) {
+      const { data: defaultScene } = await supabase
+        .from('scenes')
+        .upsert({ name: 'Default' }, { onConflict: 'name' })
+        .select()
+        .single();
+      if (defaultScene) scenesData = [defaultScene];
+    }
     if (scenesData) setScenes(scenesData);
 
     const { data: settingsData } = await supabase
@@ -628,7 +591,7 @@ export default function AdminPanel() {
 
   useEffect(() => {
     fetchAnnouncements();
-  }, []);
+  }, [selectedSceneId]);
 
   // Update scroll indicator when announcements change
   useEffect(() => {
@@ -664,12 +627,27 @@ export default function AdminPanel() {
     if (rejected.length > 0) toast.error('Only static JPG, PNG, WebP, AVIF, and BMP images are supported. GIFs, videos, and animated media are rejected.');
     if (incomingFiles.length > MAX_UPLOAD_FILES) toast.error(`Only the first ${MAX_UPLOAD_FILES} valid images were selected.`);
     if (accepted.length === 0) return;
+    setUploadSceneId(selectedSceneId);
     setSelectedFiles(accepted);
     setUploadPreviewUrls(accepted.map((file) => URL.createObjectURL(file)));
     if (!title && accepted.length === 1) setTitle(accepted[0].name.replace(/\.[^.]+$/, ''));
   };
 
   const activateScene = async (sceneId: string) => {
+    const { count, error: countError } = await supabase
+      .from('announcements')
+      .select('id', { count: 'exact', head: true })
+      .eq('scene_id', sceneId)
+      .eq('active', true);
+    if (countError) {
+      toast.error('Could not check this scene. Please try again.');
+      return;
+    }
+    if (!count) {
+      toast.error('This scene has no active images. Add an image before putting it live.');
+      return;
+    }
+
     const { error } = await supabase.rpc('activate_scene', { target_scene_id: sceneId });
     if (error) {
       toast.error(error.message || 'Scene must contain an active image');
@@ -680,9 +658,26 @@ export default function AdminPanel() {
     fetchAnnouncements();
   };
 
+  const toggleSceneLive = async (checked: boolean) => {
+    if (checked) {
+      await activateScene(selectedSceneId);
+      return;
+    }
+
+    const { error } = await supabase
+      .from('settings')
+      .update({ active_scene_id: null })
+      .eq('id', 1);
+    if (error) {
+      toast.error('Could not take the scene off the display');
+      return;
+    }
+    setActiveSceneId('');
+    toast.success('Scene removed from the display');
+  };
+
   const createScene = async () => {
-    const name = newSceneName.trim();
-    if (!name) return;
+    const name = `Scene ${scenes.length + 1}`;
     const { data, error } = await supabase.from('scenes').insert({ name }).select().single();
     if (error) {
       toast.error(error.message || 'Could not create scene');
@@ -690,8 +685,90 @@ export default function AdminPanel() {
     }
     setScenes((current) => [...current, data]);
     setSelectedSceneId(data.id);
-    setNewSceneName('');
     toast.success(`Scene “${name}” created`);
+  };
+
+  const deleteScene = async (scene: Scene) => {
+    const { data: sceneAnnouncements, error: announcementsError } = await supabase
+      .from('announcements')
+      .select('*')
+      .eq('scene_id', scene.id);
+    if (announcementsError) {
+      toast.error('Could not prepare the scene for deletion');
+      return;
+    }
+
+    if (activeSceneId === scene.id) {
+      const defaultScene = scenes.find((candidate) => candidate.name === 'Default');
+      if (!defaultScene) {
+        toast.error('The Default scene must remain available before deleting the live scene');
+        return;
+      }
+      const { error: activationError } = await supabase
+        .from('settings')
+        .update({ active_scene_id: defaultScene.id })
+        .eq('id', 1);
+      if (activationError) {
+        toast.error('Could not switch the display back to Default');
+        return;
+      }
+      setActiveSceneId(defaultScene.id);
+    }
+
+    const { error } = await supabase.from('scenes').delete().eq('id', scene.id);
+    if (error) {
+      toast.error(error.message || 'Could not delete scene');
+      return;
+    }
+
+    const deletedAnnouncements = sceneAnnouncements || [];
+    const storagePaths = deletedAnnouncements
+      .map((item) => item.image_url.split('/').pop())
+      .filter((path): path is string => Boolean(path));
+    const restore = async () => {
+      const { error: sceneError } = await supabase.from('scenes').insert(scene);
+      if (sceneError) throw sceneError;
+      if (deletedAnnouncements.length > 0) {
+        const { error: restoreError } = await supabase.from('announcements').insert(deletedAnnouncements);
+        if (restoreError) throw restoreError;
+      }
+      setScenes((current) => [...current, scene].sort((a, b) => a.created_at.localeCompare(b.created_at)));
+      setSelectedSceneId(scene.id);
+      toast.success('Scene restored');
+    };
+
+    if (selectedSceneId === scene.id) {
+      const nextScene = scenes.find((candidate) => candidate.id !== scene.id);
+      if (nextScene) setSelectedSceneId(nextScene.id);
+    }
+    setScenes((current) => current.filter((candidate) => candidate.id !== scene.id));
+
+    let undoTimer: ReturnType<typeof setTimeout>;
+    const undoToast = toast.custom((t) => (
+      <div className={`pointer-events-auto w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl ${t.visible ? 'animate-in fade-in slide-in-from-top-2' : 'animate-out fade-out'}`}>
+        <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <span className="text-sm font-medium text-slate-800">“{scene.name}” deleted</span>
+          <button
+            type="button"
+            className="text-sm font-semibold text-blue-600 hover:text-blue-800"
+            onClick={async () => {
+              clearTimeout(undoTimer);
+              toast.dismiss(t.id);
+              try {
+                await restore();
+              } catch {
+                toast.error('Could not restore the scene');
+              }
+            }}
+          >Undo</button>
+        </div>
+        <div className="h-1 origin-left bg-blue-500" style={{ animation: 'scene-delete-progress 8s linear forwards' }} />
+      </div>
+    ), { duration: 8000 });
+    undoTimer = setTimeout(async () => {
+      if (storagePaths.length > 0) await supabase.storage.from('announcements').remove(storagePaths);
+      toast.dismiss(undoToast);
+    }, 8000);
   };
 
   const onFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -726,11 +803,15 @@ export default function AdminPanel() {
     }
     setSelectedFiles([]);
     setUploadPreviewUrls([]);
+    setUploadSceneId('');
     setTitle('');
   };
 
   const confirmUpload = async () => {
-    if (selectedFiles.length === 0) return;
+    if (selectedFiles.length === 0 || !uploadSceneId) {
+      toast.error('Select a scene before uploading images');
+      return;
+    }
 
     const loadingToast = toast.loading('Uploading media...');
     const uploadedPaths: string[] = [];
@@ -747,7 +828,7 @@ export default function AdminPanel() {
         if (uploadError) throw uploadError;
         uploadedPaths.push(filePath);
         const { data: { publicUrl } } = supabase.storage.from('announcements').getPublicUrl(filePath);
-        records.push({ image_url: publicUrl, title: title || file.name.replace(/\.[^.]+$/, ''), display_duration: duration, active: true, scene_id: selectedSceneId });
+        records.push({ image_url: publicUrl, title: title || file.name.replace(/\.[^.]+$/, ''), display_duration: duration, active: true, scene_id: uploadSceneId });
       }
 
       const { error: dbError } = await supabase.from('announcements').insert(records);
@@ -806,31 +887,18 @@ export default function AdminPanel() {
       setAnnouncements((items) => {
         const oldIndex = items.findIndex((item) => item.id === active.id);
         const newIndex = items.findIndex((item) => item.id === over.id);
-        
-        setHasOrderChanges(true);
-        return arrayMove(items, oldIndex, newIndex);
+        const reordered = arrayMove(items, oldIndex, newIndex);
+        void saveOrder(reordered);
+        return reordered;
       });
     }
   };
 
-  const moveAnnouncement = (index: number, direction: 'up' | 'down') => {
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === announcements.length - 1) return;
-
-    const newAnnouncements = [...announcements];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    
-    // Swap in UI immediately
-    [newAnnouncements[index], newAnnouncements[targetIndex]] = [newAnnouncements[targetIndex], newAnnouncements[index]];
-    setAnnouncements(newAnnouncements);
-    setHasOrderChanges(true);
-  };
-
-  const saveOrder = async () => {
+  const saveOrder = async (items: Announcement[]) => {
     setSavingOrder(true);
     try {
         // Must include all required fields for upsert to work (Postgres requirement for INSERT path)
-        const updates = announcements.map((item, idx) => ({
+        const updates = items.map((item, idx) => ({
             ...item,
             order_index: idx + 1,
         }));
@@ -844,10 +912,7 @@ export default function AdminPanel() {
             .select();
 
         if (error) throw error;
-        toast.success("Order saved successfully");
-        setHasOrderChanges(false);
-        // Refresh to get canonical state
-        fetchAnnouncements();
+        // The local order is already canonical after the successful write.
     } catch (error) {
         console.error('Error saving order:', error);
         toast.error('Failed to save order');
@@ -924,15 +989,15 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-6 lg:p-8">
+    <div className="min-h-screen bg-slate-50 p-3 sm:p-4 md:p-6 lg:p-8">
         <Toaster position="top-right" />
         <div className="mx-auto max-w-7xl space-y-6">
             <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">Display Settings</h1>
+                <h1 className="text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">Display Settings</h1>
                 <p className="text-slate-500">Manage the content displayed on your display system.</p>
             </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50">
@@ -964,7 +1029,7 @@ export default function AdminPanel() {
 
         <div className="grid gap-6 lg:grid-cols-3">
             {/* Left Column: Upload & Settings */}
-            <div className="lg:col-span-1 flex flex-col gap-6 lg:h-[calc(100vh-12rem)]">
+            <div className="min-w-0 lg:col-span-1 flex flex-col gap-6 lg:h-[calc(100vh-12rem)]">
                 <Card className="shrink-0">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-lg flex items-center gap-2">
@@ -973,41 +1038,6 @@ export default function AdminPanel() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <div className="space-y-2 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
-                            <div className="flex items-center justify-between gap-2">
-                                <Label htmlFor="scene-select">Scene</Label>
-                                {activeSceneId === selectedSceneId && selectedSceneId && (
-                                    <span className="text-xs font-medium text-green-700">Live on display</span>
-                                )}
-                            </div>
-                            <select
-                                id="scene-select"
-                                value={selectedSceneId}
-                                onChange={(e) => { setSelectedSceneId(e.target.value); }}
-                                className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-                            >
-                                {scenes.map((scene) => <option key={scene.id} value={scene.id}>{scene.name}</option>)}
-                            </select>
-                            <div className="flex gap-2">
-                                <Input
-                                    value={newSceneName}
-                                    onChange={(e) => setNewSceneName(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') createScene(); }}
-                                    placeholder="New scene name"
-                                    aria-label="New scene name"
-                                />
-                                <Button type="button" variant="outline" onClick={createScene}>Create</Button>
-                            </div>
-                            <Button
-                                type="button"
-                                className="w-full"
-                                onClick={() => activateScene(selectedSceneId)}
-                                disabled={!selectedSceneId || activeSceneId === selectedSceneId}
-                            >
-                                {activeSceneId === selectedSceneId ? 'Currently Live' : 'Show This Scene'}
-                            </Button>
-                            <p className="text-xs text-slate-500">Uploads go into the selected scene. The TV switches automatically within 10 seconds after activation.</p>
-                        </div>
                         <div className="grid w-full items-center gap-1.5">
                             <div 
                                 className={`relative flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors ${
@@ -1044,7 +1074,7 @@ export default function AdminPanel() {
                 </Card>
 
                 {/* System Configuration Card (Tabbed) */}
-                <Card className="flex flex-col flex-1 overflow-hidden">
+                <Card className="flex min-w-0 flex-1 flex-col overflow-hidden">
                     <CardHeader className="pb-3 shrink-0">
                         <CardTitle className="flex items-center gap-2">
                             <Settings className="h-5 w-5" />
@@ -1052,7 +1082,7 @@ export default function AdminPanel() {
                         </CardTitle>
                         <CardDescription>Manage system settings and security.</CardDescription>
                     </CardHeader>
-                    <ScrollArea className="flex-1">
+                    <ScrollArea className="min-h-0 flex-1">
                         <CardContent className="space-y-4 p-6 pt-0">
                         {/* Tabs Navigation */}
                         <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
@@ -1091,7 +1121,9 @@ export default function AdminPanel() {
                                     <Label htmlFor="refreshInterval">Refresh Interval (minutes)</Label>
                                     <Input 
                                         id="refreshInterval" 
-                                        type="number" 
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
                                         min="1"
                                         value={settings.refresh_interval}
                                         onChange={(e) => setSettings({...settings, refresh_interval: Number(e.target.value)})}
@@ -1108,7 +1140,9 @@ export default function AdminPanel() {
                                     <Label htmlFor="defaultDuration">Default Duration (seconds)</Label>
                                     <Input 
                                         id="defaultDuration" 
-                                        type="number" 
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
                                         min="5"
                                         value={settings.default_duration}
                                         onChange={(e) => setSettings({...settings, default_duration: Number(e.target.value)})}
@@ -1281,9 +1315,62 @@ export default function AdminPanel() {
             </div>
 
             {/* Right Column: List */}
-            <div className="lg:col-span-2">
-                <Card className="flex flex-col h-[500px] lg:h-[calc(100vh-12rem)]">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <div className="min-w-0 lg:col-span-2">
+                <Card className="flex min-h-[360px] h-[min(70vh,500px)] min-w-0 flex-col lg:h-[calc(100vh-12rem)]">
+                    <div className="bg-slate-100 px-6 pt-2">
+                        <div className="flex flex-wrap items-end gap-1 overflow-hidden" role="tablist" aria-label="Scenes">
+                            {scenes.map((scene) => {
+                                const isSelected = scene.id === selectedSceneId;
+                                return (
+                                    <button
+                                        key={scene.id}
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={isSelected}
+                                        onClick={() => setSelectedSceneId(scene.id)}
+                                        className={`group relative flex min-w-max items-center gap-2 rounded-t-lg border border-b-0 px-4 py-2.5 text-sm font-medium transition-colors ${
+                                            isSelected
+                                                ? '-mb-px border-transparent bg-white text-slate-900'
+                                                : 'border-transparent text-slate-500 hover:bg-white/70 hover:text-slate-800'
+                                        }`}
+                                    >
+                                        {scene.name}
+                                        {scene.name !== 'Default' && (
+                                            <span
+                                                role="button"
+                                                tabIndex={0}
+                                                aria-label={`Delete ${scene.name}`}
+                                                className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 focus:bg-red-50 focus:text-red-600"
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    setSceneToDelete(scene);
+                                                }}
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                        event.preventDefault();
+                                                        event.stopPropagation();
+                                                        setSceneToDelete(scene);
+                                                    }
+                                                }}
+                                            >
+                                                <X className="h-3.5 w-3.5" />
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                            <button
+                                type="button"
+                                onClick={createScene}
+                                className="mb-1 ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                                aria-label="Add scene"
+                                title="Add scene"
+                            >
+                                <PlusCircle className="h-4 w-4" />
+                            </button>
+                        </div>
+                    </div>
+                    <CardHeader className="flex flex-col items-start gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
                         <div className="flex flex-col space-y-1.5">
                             <CardTitle className="flex items-center gap-2">
                                 <List className="h-5 w-5" />
@@ -1293,14 +1380,21 @@ export default function AdminPanel() {
                                 {announcements.length} active display{announcements.length !== 1 && 's'}
                             </CardDescription>
                         </div>
-                        {hasOrderChanges && (
-                            <Button size="sm" onClick={saveOrder} disabled={savingOrder}>
-                                {savingOrder ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                                Save Order
-                            </Button>
-                        )}
+                        <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+                            <div className="flex items-center gap-2 rounded-md border border-slate-200 px-3 py-1.5">
+                                <Label htmlFor="scene-live-toggle" className="text-xs font-medium text-slate-600">
+                                    Live on display
+                                </Label>
+                                <Switch
+                                    id="scene-live-toggle"
+                                    checked={activeSceneId === selectedSceneId}
+                                    onCheckedChange={toggleSceneLive}
+                                    aria-label="Show selected scene on display"
+                                />
+                            </div>
+                        </div>
                     </CardHeader>
-                    <CardContent className="flex-1 p-0 overflow-hidden relative">
+                    <CardContent className="relative min-h-0 flex-1 overflow-hidden p-0">
                         <ScrollArea className="h-full p-6">
                             <DndContext 
                                 sensors={sensors}
@@ -1321,10 +1415,6 @@ export default function AdminPanel() {
                                                 toggleActive={toggleActive}
                                                 deleteAnnouncement={deleteAnnouncement}
                                                 setViewUrl={setViewUrl}
-                                                onMoveUp={() => moveAnnouncement(index, 'up')}
-                                                onMoveDown={() => moveAnnouncement(index, 'down')}
-                                                isFirst={index === 0}
-                                                isLast={index === announcements.length - 1}
                                             />
                                         ))}
 
@@ -1371,12 +1461,40 @@ export default function AdminPanel() {
             </a>
         </div>
 
+        <AlertDialog open={Boolean(sceneToDelete)} onOpenChange={(open) => !open && setSceneToDelete(null)}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Delete “{sceneToDelete?.name}”?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This removes the scene and its images from the content list. You will have 8 seconds to undo this action.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setSceneToDelete(null)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                        className="bg-red-600 hover:bg-red-700"
+                        onClick={async () => {
+                            if (sceneToDelete) await deleteScene(sceneToDelete);
+                            setSceneToDelete(null);
+                        }}
+                    >
+                        Delete Scene
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+
         {/* Upload Confirmation Modal */}
         {selectedFiles.length > 0 && uploadPreviewUrls.length > 0 && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
             <Card className="w-full max-w-lg border-0 shadow-2xl">
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Confirm Upload ({selectedFiles.length} images)</CardTitle>
+                <div>
+                  <CardTitle>Confirm Upload ({selectedFiles.length} images)</CardTitle>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Adding to {scenes.find((scene) => scene.id === uploadSceneId)?.name || 'selected scene'}
+                  </p>
+                </div>
                 <Button variant="ghost" size="icon" onClick={cancelUpload}>
                     <X className="h-4 w-4" />
                 </Button>
@@ -1408,7 +1526,9 @@ export default function AdminPanel() {
                         <Label htmlFor="duration">Display Duration (seconds)</Label>
                         <Input
                             id="duration"
-                            type="number"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
                             value={duration}
                             onChange={(e) => setDuration(Number(e.target.value))}
                             min="1"

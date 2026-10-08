@@ -1,1 +1,32 @@
 @import "tailwindcss";
+
+@keyframes scene-delete-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* Keep numeric inputs editable without showing browser spinner controls. */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  display: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -webkit-appearance: textfield !important;
+  appearance: textfield !important;
+  -moz-appearance: textfield;
+}
+
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}

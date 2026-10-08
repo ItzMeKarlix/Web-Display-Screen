@@ -58,6 +58,7 @@ export default function Display() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [sceneLoading, setSceneLoading] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(5); // Default 5 mins
   const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
   const [keepAliveActive, setKeepAliveActive] = useState(false);
@@ -223,6 +224,13 @@ export default function Display() {
   }, []);
 
   // Fetch data
+  const preloadImages = (urls: string[]) => Promise.all(urls.map((url) => new Promise<void>((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve();
+    image.onerror = () => resolve();
+    image.src = url;
+  })));
+
   const fetchAnnouncements = async () => {
     // Read the active scene first so a scene change is picked up automatically by the TV.
     const { data: settings } = await supabase
@@ -232,11 +240,14 @@ export default function Display() {
       .single();
 
     if (!settings?.active_scene_id) {
+      setAnnouncements([]);
+      setActiveSceneId(null);
       setLoading(false);
       return;
     }
 
     const sceneChanged = activeSceneId !== null && activeSceneId !== settings.active_scene_id;
+    if (sceneChanged) setSceneLoading(true);
 
     // 1. Fetch only the active scene's announcements.
     const { data, error } = await supabase
@@ -251,6 +262,7 @@ export default function Display() {
       console.error('Error fetching announcements:', error);
     } else {
       if (data && data.length > 0) {
+        if (sceneChanged) await preloadImages(data.map((item) => item.image_url));
         setAnnouncements(data);
         if (sceneChanged) setCurrentIndex(0);
         setActiveSceneId(settings.active_scene_id);
@@ -262,10 +274,27 @@ export default function Display() {
     }
 
     setLoading(false);
+    if (sceneChanged) setSceneLoading(false);
   };
 
   useEffect(() => {
     fetchAnnouncements();
+  }, []);
+
+  // React immediately when the active scene setting changes, with polling below as a fallback.
+  useEffect(() => {
+    const channel = supabase
+      .channel('display-active-scene')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'settings', filter: 'id=eq.1' },
+        () => { void fetchAnnouncements(); }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, []);
 
   // Poll for updates
@@ -293,8 +322,10 @@ export default function Display() {
 
   if (loading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-black text-white">
-        <Loader2 className="h-10 w-10 animate-spin text-white/50" />
+      <div className="flex h-screen w-full flex-col items-center justify-center gap-5 bg-black text-white">
+        <div className="h-24 w-40 animate-pulse rounded-lg bg-white/10 sm:h-40 sm:w-64" />
+        <div className="h-3 w-32 animate-pulse rounded-full bg-white/10" />
+        <Loader2 className="h-6 w-6 animate-spin text-white/40" aria-label="Loading display" />
       </div>
     );
   }
@@ -393,6 +424,13 @@ export default function Display() {
             />
         </div>
       ))}
+      {sceneLoading && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-5 bg-black/95 text-white transition-opacity duration-300">
+          <div className="h-24 w-40 animate-pulse rounded-lg bg-white/10 sm:h-40 sm:w-64" />
+          <div className="h-3 w-32 animate-pulse rounded-full bg-white/10" />
+          <Loader2 className="h-6 w-6 animate-spin text-white/40" aria-label="Loading scene" />
+        </div>
+      )}
       {/* Admin Button */}
       <div className="absolute top-4 right-4 z-50 flex flex-col items-end gap-2 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
         {/* Status Indicator */}

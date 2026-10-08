@@ -64,6 +64,7 @@ export default function Display() {
   const [keepAliveActive, setKeepAliveActive] = useState(false);
   const [wakeLockStatus, setWakeLockStatus] = useState('initializing');
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const backgroundVideoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
 
@@ -134,6 +135,8 @@ export default function Display() {
   useEffect(() => {
     const maintainWakeLock = async () => {
       try {
+        const video = backgroundVideoRef.current;
+        if (video?.paused) void video.play().catch(() => undefined);
         if ('wakeLock' in navigator) {
           // Only request if we don't already have one
           if (!wakeLockRef.current || await (wakeLockRef.current as any).released) {
@@ -153,7 +156,10 @@ export default function Display() {
     maintainWakeLock(); // Try immediately
 
     // Check and maintain wake lock every 10 seconds
-    const maintenanceInterval = setInterval(maintainWakeLock, 10000);
+    const maintenanceInterval = setInterval(maintainWakeLock, 30000);
+    document.addEventListener('visibilitychange', maintainWakeLock);
+    document.addEventListener('pointerdown', maintainWakeLock, { once: true });
+    document.addEventListener('keydown', maintainWakeLock, { once: true });
     
     // Request fullscreen if possible
     const requestFullscreen = async () => {
@@ -178,7 +184,12 @@ export default function Display() {
 
     return () => {
       clearInterval(maintenanceInterval);
+      document.removeEventListener('visibilitychange', maintainWakeLock);
+      document.removeEventListener('pointerdown', maintainWakeLock);
+      document.removeEventListener('keydown', maintainWakeLock);
       document.removeEventListener('click', enableFullscreenOnClick);
+      void wakeLockRef.current?.release();
+      wakeLockRef.current = null;
     };
   }, []);
 
@@ -397,6 +408,7 @@ export default function Display() {
       />
       {/* Invisible background video - keeps LG TV awake during display mode */}
       <video 
+        ref={backgroundVideoRef}
         autoPlay
         muted
         loop
